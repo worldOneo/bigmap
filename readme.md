@@ -33,8 +33,9 @@ PASS
 ok      github.com/worldOneo/bigmap     105.974s
 ```
 
-## Fast access
-As you can see, most operations are done in **under 0.3μ** and can therefore be accessed over **3 Million times / second**
+## Fast
+As you can see, most operations are done in **under 0.3μ** and can therefore be accessed over **3 Million times / second**.
+It also **avoids GC** checks. This is achieved by storing the objects in one byte-slice.
 
 ## Concurrent
 The map has **no global lock**.
