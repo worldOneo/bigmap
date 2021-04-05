@@ -31,15 +31,47 @@ BenchmarkBigMap_Mix_Ballanced_Parallel-12       16510561               152.3 ns/
 BenchmarkBigMap_Mix_Unballanced_Parallel-12     10160574               224.3 ns/op            18 B/op          1 allocs/op
 PASS
 ok      github.com/worldOneo/bigmap     105.974s
+
+go test -benchmem -run=^$ -bench BenchmarkBigMap_Goroutines github.com/worldOneo/bigmap -benchtime=3s
+ === 
+Benchmarking with 480000 routines
+ ===
+goos: windows
+goarch: amd64
+pkg: github.com/worldOneo/bigmap
+cpu: Intel(R) Core(TM) i7-8750H CPU @ 2.20GHz
+BenchmarkBigMap_Goroutines/BigMap_Put_Parallel-12               11916488       282.2 ns/op      414 B/op     0 allocs/op
+BenchmarkBigMap_Goroutines/BigMap_Get_Parallel-12               59722618       150.2 ns/op       47 B/op     1 allocs/op
+BenchmarkBigMap_Goroutines/BigMap_Delete_Parallel-12            42789036       121.6 ns/op       16 B/op     1 allocs/op
+BenchmarkBigMap_Goroutines/BigMap_Mix_Parallel-12               15347977       204.7 ns/op       92 B/op     0 allocs/op
+BenchmarkBigMap_Goroutines/BigMap_Mix_Unbalanced_Parallel-12    16880276       214.4 ns/op      148 B/op     0 allocs/op
+PASS
+ok      github.com/worldOneo/bigmap     136.896s
 ```
 
 ## Fast
-As you can see, most operations are done in **under 0.3μ** and can therefore be accessed over **3 Million times / second**.
+As you can see, most operations are done in **under 0.3μs** and can therefore be accessed over **3 Million times / second**.
 It also **avoids GC** checks. This is achieved by storing the objects in one byte-slice.
 
 ## Concurrent
 The map has **no global lock**.
-It is split into **16 Shards** which are locked individual. As the benchmarks show **it doesn't slow down, under concurrent access**
+It is split into **16 Shards** which are locked individual. As the benchmarks show **it gains from concurrent access**
+
+As the benchmarks already show, the BigMap gains from concurrency.
+As it claims a big chunk of memory and items have a max size it is faster than the standart map.
+### Sync
+| | Time | diff | GC Pause total | GC Diff |
+| --- | --- |--- | --- | --- |
+| **BigMap** | 2m1.5s | 0% | 6.6ms | 0% |
+| **StdMap** | 3m21s | +66% | 14.7ms | +22% |
+| **Syncmap** | 9m46.9s | +383% | 16.6ms | +51% |
+ 
+### Async
+| | Time | diff |
+| --- | --- |--- |
+| **BigMap** | 38.1s | 0% |
+| **StdMap** (synced with RWMutex) | 4m32s | +456% |
+| **Syncmap** | 10m35.6s | +1.568% |
 
 ## Scaling
 If you have more concurrent accesses, you always increase the shard count.

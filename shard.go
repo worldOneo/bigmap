@@ -30,12 +30,12 @@ func NewShard(capacity, entrysize uint32) *Shard {
 }
 
 func (S *Shard) Put(key uint64, val []byte) error {
-	S.Lock()
-	defer S.Unlock()
 	lval := uint32(len(val))
 	if lval > S.entrysize {
 		return fmt.Errorf("shard put: value size to long (%d > %d)", lval, S.entrysize)
 	}
+	S.Lock()
+	defer S.Unlock()
 	ptr, ok := S.ptrs[key]
 	if !ok {
 		if S.freecdx < S.freeidx {
@@ -48,7 +48,7 @@ func (S *Shard) Put(key uint64, val []byte) error {
 	}
 	pp := ptr + LengthBytes
 	binary.LittleEndian.PutUint32(S.buff, lval)
-	copy(S.array[ptr:pp+lval], S.buff)
+	copy(S.array[ptr:pp], S.buff)
 	copy(S.array[pp:pp+lval], val)
 	S.ptrs[key] = ptr
 	S.size += LengthBytes
@@ -63,9 +63,10 @@ func (S *Shard) Get(key uint64) ([]byte, bool) {
 	if !ok {
 		return nil, false
 	}
-	l := binary.LittleEndian.Uint32(S.array[ptr:(ptr + LengthBytes)])
+	ppl := ptr + LengthBytes
+	l := binary.LittleEndian.Uint32(S.array[ptr:])
 	dst := make([]byte, l)
-	copy(dst, S.array[ptr+LengthBytes:ptr+LengthBytes+l])
+	copy(dst, S.array[ppl:ppl+l])
 	return dst, true
 }
 
@@ -80,12 +81,14 @@ func (S *Shard) Delete(key uint64) bool {
 		lfree := len(S.free)
 		if S.freeidx >= lfree {
 			var a []uint32
-			if S.freecdx-len(S.free) > lfree/2 {
+			if len(S.free)-S.freecdx < lfree/2 {
 				a = make([]uint32, len(S.free))
 			} else {
 				a = make([]uint32, len(S.free)*2)
 			}
-			copy(a, S.free)
+			copy(a, S.free[S.freecdx:])
+			S.freeidx -= S.freecdx
+			S.freecdx = 0
 			S.free = a
 		}
 	}

@@ -21,8 +21,14 @@ func New(entrysize uint32, config ...Config) BigMap {
 	cap := DefaultCapacity
 	shardcnt := DefaultShards
 	if len(config) != 0 {
-		cap = config[0].Capacity
-		shardcnt = config[0].Shards
+		ncap := config[0].Capacity
+		if ncap != 0 {
+			cap = ncap
+		}
+		nshards := config[0].Shards
+		if nshards != 0 {
+			shardcnt = nshards
+		}
 	}
 
 	bm := BigMap{shards: make([]*Shard, shardcnt)}
@@ -33,7 +39,7 @@ func New(entrysize uint32, config ...Config) BigMap {
 	return bm
 }
 
-func FNV64(key string) uint64 {
+func FNV64(key []byte) uint64 {
 	var hash uint64 = Offset64
 	for _, i := range key {
 		hash ^= uint64(i)
@@ -42,22 +48,22 @@ func FNV64(key string) uint64 {
 	return hash
 }
 
-func (B *BigMap) Put(key string, val []byte) error {
+func (B *BigMap) Put(key []byte, val []byte) error {
 	s, h := B.selectShard(key)
 	return s.Put(h, val)
 }
 
-func (B *BigMap) Get(key string) ([]byte, bool) {
+func (B *BigMap) Get(key []byte) ([]byte, bool) {
 	s, h := B.selectShard(key)
 	return s.Get(h)
 }
 
-func (B *BigMap) Delete(key string) bool {
+func (B *BigMap) Delete(key []byte) bool {
 	s, h := B.selectShard(key)
 	return s.Delete(h)
 }
 
-func (B *BigMap) selectShard(key string) (*Shard, uint64) {
+func (B *BigMap) selectShard(key []byte) (*Shard, uint64) {
 	h := FNV64(key)
 	return B.shards[h%uint64(len(B.shards))], h
 }
