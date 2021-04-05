@@ -50,7 +50,7 @@ ok      github.com/worldOneo/bigmap     136.896s
 ```
 
 ## Fast
-As you can see, most operations are done in **under 0.3μs** and can therefore be accessed over **3 Million times / second**.
+As you can see, most operations are done in **under 0.3μs** and can therefore be done over **3 Million times / second**.
 It also **avoids GC** checks. This is achieved by storing the objects in one byte-slice.
 
 ## Concurrent
@@ -74,5 +74,13 @@ As it claims a big chunk of memory and items have a max size it is faster than t
 | **Syncmap** | 10m35.6s | +1.568% |
 
 ## Scaling
-If you have more concurrent accesses, you always increase the shard count.
-As always: only benchmarking **your usecase** will reveal the required settings.
+If you have more concurrent accesses, you can always increase the shard count.
+As always: only benchmarking **your usecase** will reveal the optimal settings.
+But as shown, with the default 16 shards, you don't get a bad access speed even with half a million routines.
+Each shard can store gigabytes of data without loosing performance, so it is good for storing tons of tons of normalized data.
+
+## Attention
+The map scales as more data is added but, to enable high performance, doesn't schrink.
+To enable the fast accessess free heap is held "hot" to be ready to use.
+This means the map might grow once realy big but then never grows again.
+
