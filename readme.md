@@ -60,9 +60,9 @@ As it claims a big chunk of memory and items have a max size it is faster than t
 ### Sync
 | | Time | diff | GC Pause total | GC Diff |
 | --- | --- |--- | --- | --- |
-| **BigMap** | 2m1.5s | 0% | 6.6ms | 0% |
-| **StdMap** | 3m21s | +66% | 14.7ms | +22% |
-| **Syncmap** | 9m46.9s | +383% | 16.6ms | +51% |
+| **BigMap** | 2m6s | 0% | 8ms | 0% |
+| **StdMap** | 3m31s | +67% | 18.6ms | +132% |
+| **Syncmap** | 9m54s | +371% | 18.3ms | +128% |
  
 ### Async
 | | Time | diff |
