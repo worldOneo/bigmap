@@ -41,29 +41,30 @@ func New(entrysize uint32, config ...Config) BigMap {
 
 func FNV64(key []byte) uint64 {
 	var hash uint64 = Offset64
-	for _, i := range key {
-		hash ^= uint64(i)
+	l := len(key)
+	for i := 0; i < l; i++ {
+		hash ^= uint64(key[i])
 		hash *= Prime64
 	}
 	return hash
 }
 
 func (B *BigMap) Put(key []byte, val []byte) error {
-	s, h := B.selectShard(key)
+	s, h := B.SelectShard(key)
 	return s.Put(h, val)
 }
 
 func (B *BigMap) Get(key []byte) ([]byte, bool) {
-	s, h := B.selectShard(key)
+	s, h := B.SelectShard(key)
 	return s.Get(h)
 }
 
 func (B *BigMap) Delete(key []byte) bool {
-	s, h := B.selectShard(key)
+	s, h := B.SelectShard(key)
 	return s.Delete(h)
 }
 
-func (B *BigMap) selectShard(key []byte) (*Shard, uint64) {
+func (B *BigMap) SelectShard(key []byte) (*Shard, uint64) {
 	h := FNV64(key)
 	return B.shards[h%uint64(len(B.shards))], h
 }

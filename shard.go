@@ -32,7 +32,8 @@ func NewShard(capacity, entrysize uint32) *Shard {
 func (S *Shard) Put(key uint64, val []byte) error {
 	lval := uint32(len(val))
 	if lval > S.entrysize {
-		return fmt.Errorf("shard put: value size to long (%d > %d)", lval, S.entrysize)
+		_lval := lval
+		return fmt.Errorf("shard put: value size to long (%d > %d)", _lval, S.entrysize)
 	}
 	S.Lock()
 	defer S.Unlock()
@@ -82,14 +83,14 @@ func (S *Shard) Delete(key uint64) bool {
 		if S.freeidx >= lfree {
 			var a []uint32
 			if len(S.free)-S.freecdx < lfree/2 {
-				a = make([]uint32, len(S.free))
+				copy(S.free, S.free[S.freecdx:])
 			} else {
 				a = make([]uint32, len(S.free)*2)
+				copy(a, S.free[S.freecdx:])
+				S.free = a
 			}
-			copy(a, S.free[S.freecdx:])
 			S.freeidx -= S.freecdx
 			S.freecdx = 0
-			S.free = a
 		}
 	}
 	return ok

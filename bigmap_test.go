@@ -2,9 +2,12 @@ package bigmap
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"runtime"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -19,9 +22,35 @@ func RandomString(n int) string {
 	return string(s)
 }
 
+func BenchmarkGenKey(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		GenKey(i)
+	}
+}
+func BenchmarkFNV64(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		FNV64(GenKey(i))
+	}
+}
 func BenchmarkShard_Put(b *testing.B) {
 	shard := NewShard(1024, 100)
 	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		shard.Put(FNV64(GenKey(i)), GenVal())
+	}
+}
+
+func BenchmarkShard_Put_Stretched(b *testing.B) {
+	shard := NewShard(1024, 100)
+	for i := 0; i < b.N/2; i++ {
+		shard.Put(FNV64(GenSafeKey("singly", i)), GenVal())
+	}
+	for i := 0; i < b.N/2; i++ {
+		shard.Delete(FNV64(GenSafeKey("singly", i)))
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		shard.Put(FNV64(GenKey(i)), GenVal())
 	}
@@ -157,12 +186,13 @@ func BenchmarkBigMap_Put_Parallel(b *testing.B) {
 
 func BenchmarkBigMap_Get_Parallel(b *testing.B) {
 	bigmap := New(100)
-	PopulateMap(b.N, &bigmap)
+	PopulateMapParallel(b, &bigmap)
 
 	b.ReportAllocs()
 	b.ResetTimer()
+	w := int32(-1)
 	b.RunParallel(func(p *testing.PB) {
-		worker := strconv.Itoa(rand.Int())
+		worker := strconv.Itoa(int(atomic.AddInt32(&w, 1)))
 		i := 0
 		for p.Next() {
 			bigmap.Get(GenSafeKey(worker, i))
@@ -173,12 +203,13 @@ func BenchmarkBigMap_Get_Parallel(b *testing.B) {
 
 func BenchmarkBigMap_Delete_Parallel(b *testing.B) {
 	bigmap := New(100)
-	PopulateMap(b.N, &bigmap)
+	PopulateMapParallel(b, &bigmap)
 
 	b.ReportAllocs()
 	b.ResetTimer()
+	w := int32(0)
 	b.RunParallel(func(p *testing.PB) {
-		worker := strconv.Itoa(rand.Int())
+		worker := strconv.Itoa(int(atomic.AddInt32(&w, 1)))
 		i := 0
 		for p.Next() {
 			bigmap.Delete(GenSafeKey(worker, i))
@@ -285,6 +316,23 @@ func PopulateMap(n int, bm *BigMap) {
 	for i := 0; i < n; i++ {
 		bm.Put(GenKey(i), GenVal())
 	}
+}
+
+func PopulateMapParallel(b *testing.B, bm *BigMap) {
+	n := int(math.Min(float64(b.N), 2000000))
+	b.Logf("Populating map with %d items", n)
+	wg := sync.WaitGroup{}
+	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
+		wg.Add(1)
+		w := strconv.Itoa(i)
+		go func(worker string) {
+			for i := 0; i < n; i++ {
+				bm.Put(GenSafeKey(worker, i), GenVal())
+			}
+			wg.Done()
+		}(w)
+	}
+	wg.Wait()
 }
 
 func GenVal() []byte {
