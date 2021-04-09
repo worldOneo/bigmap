@@ -12,14 +12,14 @@ import (
 	"time"
 )
 
-func RandomString(n int) string {
+func RandomString(n int) []byte {
 	var letters = []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 
 	s := make([]byte, n)
 	for i := range s {
 		s[i] = letters[rand.Intn(len(letters))]
 	}
-	return string(s)
+	return s
 }
 
 func BenchmarkGenKey(b *testing.B) {
@@ -27,6 +27,7 @@ func BenchmarkGenKey(b *testing.B) {
 		GenKey(i)
 	}
 }
+
 func BenchmarkFNV64(b *testing.B) {
 	// This benchmark is to fast to iterate over b.N items
 	// therefore we need to limit the amount
@@ -41,7 +42,7 @@ func BenchmarkFNV64(b *testing.B) {
 	}
 }
 func BenchmarkShard_Put(b *testing.B) {
-	shard := NewShard(1024, 100)
+	shard := NewShard(1024, 100, 0)
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		shard.Put(FNV64(GenKey(i)), GenVal())
@@ -49,7 +50,7 @@ func BenchmarkShard_Put(b *testing.B) {
 }
 
 func BenchmarkShard_Put_Stretched(b *testing.B) {
-	shard := NewShard(1024, 100)
+	shard := NewShard(1024, 100, 0)
 	for i := 0; i < b.N/2; i++ {
 		shard.Put(FNV64(GenSafeKey("singly", i)), GenVal())
 	}
@@ -65,7 +66,7 @@ func BenchmarkShard_Put_Stretched(b *testing.B) {
 }
 
 func BenchmarkShard_Get(b *testing.B) {
-	shard := NewShard(1024, 100)
+	shard := NewShard(1024, 100, 0)
 	for i := 0; i < b.N; i++ {
 		shard.Put(FNV64(GenKey(i)), GenVal())
 	}
@@ -77,7 +78,7 @@ func BenchmarkShard_Get(b *testing.B) {
 }
 
 func BenchmarkShard_Delete(b *testing.B) {
-	shard := NewShard(1024, 100)
+	shard := NewShard(1024, 100, 0)
 	for i := 0; i < b.N; i++ {
 		shard.Put(FNV64(GenKey(i)), GenVal())
 	}
@@ -89,7 +90,7 @@ func BenchmarkShard_Delete(b *testing.B) {
 }
 
 func BenchmarkShard_Mix_Ballanced(b *testing.B) {
-	shard := NewShard(1024, 100)
+	shard := NewShard(1024, 100, 0)
 	b.ReportAllocs()
 	for i := 0; i < b.N/3; i++ {
 		k := FNV64(GenKey(i))
@@ -100,7 +101,7 @@ func BenchmarkShard_Mix_Ballanced(b *testing.B) {
 }
 
 func BenchmarkShard_Mix_Unballanced(b *testing.B) {
-	shard := NewShard(1024, 100)
+	shard := NewShard(1024, 100, 0)
 	b.ReportAllocs()
 	N := b.N/3 + 1
 	for i := 0; i < N; i++ {
@@ -293,7 +294,6 @@ func BenchmarkBigMap_Goroutines(b *testing.B) {
 	BenchParallel(b, 10)
 	BenchParallel(b, 1000)
 	BenchParallel(b, 10000)
-	BenchParallel(b, 40000)
 }
 
 func BenchParallel(b *testing.B, n int) {
@@ -349,30 +349,30 @@ func GenVal() []byte {
 
 func TestBigMap(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
-	keys := make([]string, 4096*8)
-	vals := make([]string, 4096*8)
+	keys := make([][]byte, 4096*8)
+	vals := make([][]byte, 4096*8)
 	for i := range keys {
 		keys[i] = RandomString(10)
 		vals[i] = RandomString(100)
 	}
 	bigmap := New(100)
 	for i, key := range keys {
-		err := bigmap.Put([]byte(key), []byte(vals[i]))
+		err := bigmap.Put(key, vals[i])
 		if err != nil {
 			t.Fatalf("shard put: %v", err)
 		}
 	}
 
 	for i, key := range keys {
-		val, _ := bigmap.Get([]byte(key))
+		val, _ := bigmap.Get(key)
 
-		if string(val) != vals[i] {
+		if string(val) != string(vals[i]) {
 			t.Fatalf("val expected: '%s' != '%s' ", string(val), vals[i])
 		}
 	}
 
 	for _, key := range keys {
-		ok := bigmap.Delete([]byte(key))
+		ok := bigmap.Delete(key)
 
 		if !ok {
 			t.Fatalf("delete expected")
@@ -380,7 +380,7 @@ func TestBigMap(t *testing.T) {
 	}
 
 	for i, key := range keys {
-		err := bigmap.Put([]byte(key), []byte(vals[i]))
+		err := bigmap.Put(key, vals[i])
 		if err != nil {
 			t.Fatalf("shard put: %v", err)
 		}
@@ -390,33 +390,68 @@ func TestBigMap(t *testing.T) {
 
 func TestShard(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
-	keys := make([]string, 4096)
-	vals := make([]string, 4096)
+	keys := make([][]byte, 4096)
+	vals := make([][]byte, 4096)
 	for i := range keys {
 		keys[i] = RandomString(10)
 		vals[i] = RandomString(100)
 	}
-	shard := NewShard(1024, 1024)
+	shard := NewShard(1024, 1024, 0)
 	for i, key := range keys {
-		err := shard.Put(FNV64([]byte(key)), []byte(vals[i]))
+		err := shard.Put(FNV64(key), vals[i])
 		if err != nil {
 			t.Fatalf("shard put: %v", err)
 		}
 	}
 
 	for i, key := range keys {
-		val, ok := shard.Get(FNV64([]byte(key)))
+		val, ok := shard.Get(FNV64(key))
 
-		if !ok || string(val) != vals[i] {
+		if !ok || string(val) != string(vals[i]) {
 			t.Fatalf("val expected: '%s' != '%s' ", string(val), vals[i])
 		}
 	}
 
 	for _, key := range keys {
-		ok := shard.Delete(FNV64([]byte(key)))
+		ok := shard.Delete(FNV64(key))
 
 		if !ok {
 			t.Fatalf("delete expected")
+		}
+	}
+}
+
+func TestExpiration(t *testing.T) {
+	rand.Seed(time.Now().UnixNano())
+	keys := make([][]byte, 4096*8)
+	vals := make([][]byte, 4096*8)
+	a := GenVal()
+	b := GenKey(1)
+	for i := range keys {
+		keys[i] = b
+		vals[i] = a
+	}
+	shard := NewShard(1024, 1024, time.Second*5)
+	for i, key := range keys {
+		err := shard.Put(FNV64(key), vals[i])
+		if err != nil {
+			t.Fatalf("shard put: %v", err)
+		}
+	}
+
+	for _, key := range keys {
+		_, ok := shard.Get(FNV64(key))
+
+		if !ok {
+			t.Fatalf("Expiration service swooped to early")
+		}
+	}
+	time.Sleep(time.Second * 6)
+	for i, key := range keys {
+		_, ok := shard.Get(FNV64(key))
+
+		if ok {
+			t.Fatalf("Expiration service didn't swoop well enough for key %s (idx: %d)", key, i)
 		}
 	}
 }
