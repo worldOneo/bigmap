@@ -28,8 +28,16 @@ func BenchmarkGenKey(b *testing.B) {
 	}
 }
 func BenchmarkFNV64(b *testing.B) {
+	// This benchmark is to fast to iterate over b.N items
+	// therefore we need to limit the amount
+	b.StopTimer()
+	k := make([][]byte, 2_000_000)
+	for i := 0; i < len(k); i++ {
+		k[i] = GenKey(i)
+	}
+	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		FNV64(GenKey(i))
+		FNV64(k[i%len(k)])
 	}
 }
 func BenchmarkShard_Put(b *testing.B) {

@@ -46,12 +46,12 @@ func (S *Shard) Put(key uint64, val []byte) error {
 			ptr = S.size
 			S.sizeCheck(lval + LengthBytes)
 		}
+		S.ptrs[key] = ptr
 	}
 	pp := ptr + LengthBytes
 	binary.LittleEndian.PutUint32(S.buff, lval)
 	copy(S.array[ptr:pp], S.buff)
 	copy(S.array[pp:pp+lval], val)
-	S.ptrs[key] = ptr
 	S.size += LengthBytes
 	S.size += S.entrysize
 	return nil
