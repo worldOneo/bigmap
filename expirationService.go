@@ -6,7 +6,7 @@ import (
 )
 
 type expirationService struct {
-	sync.RWMutex
+	sync.Mutex
 	accesses  map[uint64]int64
 	shard     *Shard
 	lastCheck int64
@@ -31,6 +31,7 @@ func (E *expirationService) expirationCheck() {
 	for k, v := range E.accesses {
 		if now-v > E.Expires {
 			if !locked {
+				locked = true
 				E.shard.Lock()
 			}
 			E.shard.unsafeDelete(k)
