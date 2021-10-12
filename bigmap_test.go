@@ -41,118 +41,50 @@ func BenchmarkFNV64(b *testing.B) {
 		FNV64(k[i%len(k)])
 	}
 }
-func BenchmarkShard_Put(b *testing.B) {
-	shard := NewShard(1024, 100, 0)
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		shard.Put(FNV64(GenKey(i)), GenVal())
-	}
-}
-
-func BenchmarkShard_Put_Stretched(b *testing.B) {
-	shard := NewShard(1024, 100, 0)
-	for i := 0; i < b.N/2; i++ {
-		shard.Put(FNV64(GenSafeKey("singly", i)), GenVal())
-	}
-	for i := 0; i < b.N/2; i++ {
-		shard.Delete(FNV64(GenSafeKey("singly", i)))
-	}
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		shard.Put(FNV64(GenKey(i)), GenVal())
-	}
-}
-
-func BenchmarkShard_Get(b *testing.B) {
-	shard := NewShard(1024, 100, 0)
-	for i := 0; i < b.N; i++ {
-		shard.Put(FNV64(GenKey(i)), GenVal())
-	}
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		shard.Get(FNV64(GenKey(i)))
-	}
-}
-
-func BenchmarkShard_Delete(b *testing.B) {
-	shard := NewShard(1024, 100, 0)
-	for i := 0; i < b.N; i++ {
-		shard.Put(FNV64(GenKey(i)), GenVal())
-	}
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		shard.Delete(FNV64(GenKey(i)))
-	}
-}
-
-func BenchmarkShard_Mix_Ballanced(b *testing.B) {
-	shard := NewShard(1024, 100, 0)
-	b.ReportAllocs()
-	for i := 0; i < b.N/3; i++ {
-		k := FNV64(GenKey(i))
-		shard.Put(k, GenVal())
-		shard.Get(k)
-		shard.Delete(k)
-	}
-}
-
-func BenchmarkShard_Mix_Unballanced(b *testing.B) {
-	shard := NewShard(1024, 100, 0)
-	b.ReportAllocs()
-	N := b.N/3 + 1
-	for i := 0; i < N; i++ {
-		k := FNV64(GenKey(i))
-		shard.Put(k, GenVal())
-	}
-	for i := 0; i < N; i++ {
-		k := FNV64(GenKey(i))
-		shard.Get(k)
-	}
-	for i := 0; i < N; i++ {
-		k := FNV64(GenKey(i))
-		shard.Delete(k)
-	}
-}
 
 func BenchmarkBigMap_Put(b *testing.B) {
 	bigmap := New(100)
-	b.ReportAllocs()
+	val := GenVal()
+	keys := make([][]byte, b.N)
 	for i := 0; i < b.N; i++ {
-		bigmap.Put(GenKey(i), GenVal())
+		keys[i] = GenKey(i)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		bigmap.Put(keys[i], val)
 	}
 }
 
 func BenchmarkBigMap_Get(b *testing.B) {
 	bigmap := New(100)
-	PopulateMap(b.N, &bigmap)
+	keys := PopulateMap(b.N, &bigmap)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		bigmap.Delete(GenKey(i))
+		bigmap.Get(keys[i])
 	}
 }
 
 func BenchmarkBigMap_Delete(b *testing.B) {
 	bigmap := New(100)
-	PopulateMap(b.N, &bigmap)
+	keys := PopulateMap(b.N, &bigmap)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		bigmap.Get(GenKey(i))
+		bigmap.Delete(keys[i])
 	}
 }
 
 func BenchmarkBigMap_Mix_Ballanced(b *testing.B) {
 	bigmap := New(100)
+	keys := GenMapKeys(b.N)
 	b.ReportAllocs()
+	b.ResetTimer()
 	for i := 0; i < b.N/3; i++ {
-		k := GenKey(i)
+		k := keys[i]
 		bigmap.Put(k, GenVal())
 		bigmap.Get(k)
 		bigmap.Delete(k)
@@ -162,18 +94,17 @@ func BenchmarkBigMap_Mix_Ballanced(b *testing.B) {
 func BenchmarkBigMap_Mix_Unballanced(b *testing.B) {
 	bigmap := New(100)
 	N := b.N/3 + 1
+	keys := GenMapKeys(N)
 	b.ReportAllocs()
+	b.ResetTimer()
 	for i := 0; i < N; i++ {
-		k := GenKey(i)
-		bigmap.Put(k, GenVal())
+		bigmap.Put(keys[i], GenVal())
 	}
 	for i := 0; i < N; i++ {
-		k := GenKey(i)
-		bigmap.Get(k)
+		bigmap.Get(keys[i])
 	}
 	for i := 0; i < N; i++ {
-		k := GenKey(i)
-		bigmap.Delete(k)
+		bigmap.Delete(keys[i])
 	}
 }
 
@@ -320,15 +251,26 @@ func GenKey(i int) []byte {
 	return []byte(fmt.Sprintf("gen-%d", i))
 }
 
-func PopulateMap(n int, bm *BigMap) {
+func GenMapKeys(n int) [][]byte {
+	keys := make([][]byte, n)
 	for i := 0; i < n; i++ {
-		bm.Put(GenKey(i), GenVal())
+		keys[i] = GenKey(i)
 	}
+	return keys
+}
+
+func PopulateMap(n int, bm *BigMap) [][]byte {
+	keys := make([][]byte, n)
+	for i := 0; i < n; i++ {
+		keys[i] = GenKey(i)
+		bm.Put(keys[i], GenVal())
+	}
+	return keys
 }
 
 func PopulateMapParallel(b *testing.B, bm *BigMap) {
 	n := int(math.Min(float64(b.N), 2000000))
-	b.Logf("Populating map with %d items", n)
+	//b.Logf("Populating map with %d items", n)
 	wg := sync.WaitGroup{}
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
 		wg.Add(1)
@@ -386,72 +328,4 @@ func TestBigMap(t *testing.T) {
 		}
 	}
 
-}
-
-func TestShard(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
-	keys := make([][]byte, 4096)
-	vals := make([][]byte, 4096)
-	for i := range keys {
-		keys[i] = RandomString(10)
-		vals[i] = RandomString(100)
-	}
-	shard := NewShard(1024, 1024, 0)
-	for i, key := range keys {
-		err := shard.Put(FNV64(key), vals[i])
-		if err != nil {
-			t.Fatalf("shard put: %v", err)
-		}
-	}
-
-	for i, key := range keys {
-		val, ok := shard.Get(FNV64(key))
-
-		if !ok || string(val) != string(vals[i]) {
-			t.Fatalf("val expected: '%s' != '%s' ", string(val), vals[i])
-		}
-	}
-
-	for _, key := range keys {
-		ok := shard.Delete(FNV64(key))
-
-		if !ok {
-			t.Fatalf("delete expected")
-		}
-	}
-}
-
-func TestExpiration(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
-	keys := make([][]byte, 4096*8)
-	vals := make([][]byte, 4096*8)
-	a := GenVal()
-	b := GenKey(1)
-	for i := range keys {
-		keys[i] = b
-		vals[i] = a
-	}
-	shard := NewShard(1024, 1024, time.Second*5)
-	for i, key := range keys {
-		err := shard.Put(FNV64(key), vals[i])
-		if err != nil {
-			t.Fatalf("shard put: %v", err)
-		}
-	}
-
-	for _, key := range keys {
-		_, ok := shard.Get(FNV64(key))
-
-		if !ok {
-			t.Fatalf("Expiration service swooped to early")
-		}
-	}
-	time.Sleep(time.Second * 6)
-	for i, key := range keys {
-		_, ok := shard.Get(FNV64(key))
-
-		if ok {
-			t.Fatalf("Expiration service didn't swoop well enough for key %s (idx: %d)", key, i)
-		}
-	}
 }

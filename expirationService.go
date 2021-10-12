@@ -33,13 +33,11 @@ func (E *expirationService) expirationCheck() {
 			if !locked {
 				locked = true
 				E.shard.Lock()
+				defer E.shard.Unlock()
 			}
 			E.shard.unsafeDelete(k)
 			delete(E.accesses, k)
 		}
-	}
-	if locked {
-		E.shard.Unlock()
 	}
 	E.lastCheck = now
 }

@@ -30,7 +30,8 @@ type Shard struct {
 // The entrysize defines the size each entry takes.
 // Smaller entries are no problem, but bigger will result in an error.
 // Expires defines the time after items can be removed.
-// If expires is >= 0 it will be ignored and items wont be removed.
+// If expires is smaller or equals 0 it will be ignored and
+// items wont be removed automatically.
 func NewShard(capacity, entrysize uint32, expires time.Duration) *Shard {
 	shrd := &Shard{
 		ptrs:      make(map[uint64]uint32),
@@ -48,9 +49,9 @@ func NewShard(capacity, entrysize uint32, expires time.Duration) *Shard {
 
 // Put adds or overwrites an item in(to) the shards internal byte-array.
 func (S *Shard) Put(key uint64, val []byte) error {
-	lval := uint32(len(val))
-	if lval > S.entrysize {
-		_lval := lval
+	dataLength := uint32(len(val))
+	if dataLength > S.entrysize {
+		_lval := dataLength
 		return fmt.Errorf("shard put: value size to long (%d > %d)", _lval, S.entrysize)
 	}
 	S.hitIfExpires(key)
@@ -63,14 +64,14 @@ func (S *Shard) Put(key uint64, val []byte) error {
 			S.freecdx++
 		} else {
 			ptr = S.size
-			S.sizeCheck(lval + LengthBytes)
+			S.sizeCheck(dataLength + LengthBytes)
 		}
 		S.ptrs[key] = ptr
 	}
-	pp := ptr + LengthBytes
-	binary.LittleEndian.PutUint32(S.buff, lval)
-	copy(S.array[ptr:pp], S.buff)
-	copy(S.array[pp:pp+lval], val)
+	dataIndex := ptr + LengthBytes
+	binary.LittleEndian.PutUint32(S.buff, dataLength)
+	copy(S.array[ptr:dataIndex], S.buff)
+	copy(S.array[dataIndex:dataIndex+dataLength], val)
 	S.size += LengthBytes
 	S.size += S.entrysize
 	return nil
@@ -88,10 +89,10 @@ func (S *Shard) Get(key uint64) ([]byte, bool) {
 	if !ok {
 		return nil, false
 	}
-	ppl := ptr + LengthBytes
-	l := binary.LittleEndian.Uint32(S.array[ptr:])
-	dst := make([]byte, l)
-	copy(dst, S.array[ppl:ppl+l])
+	dataIndex := ptr + LengthBytes
+	dataLength := binary.LittleEndian.Uint32(S.array[ptr:])
+	dst := make([]byte, dataLength)
+	copy(dst, S.array[dataIndex:dataIndex+dataLength])
 	return dst, true
 }
 
