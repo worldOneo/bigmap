@@ -39,7 +39,7 @@ func NewShard(capacity, entrysize uint32, expSrv ExpirationService) *Shard {
 		entrysize: entrysize,
 		array:     make([]byte, capacity),
 		buff:      make([]byte, LengthBytes),
-		expSrv: expSrv,
+		expSrv:    expSrv,
 	}
 	return shrd
 }
@@ -52,6 +52,11 @@ func (S *Shard) Put(key uint64, val []byte) error {
 		return fmt.Errorf("shard put: value size to long (%d > %d)", _lval, S.entrysize)
 	}
 	S.hitExpirationService(key, ExpirationService.BeforeLock)
+	defer func() {
+		S.hitExpirationService(key, ExpirationService.Access)
+		S.Unlock()
+		S.hitExpirationService(key, ExpirationService.AfterAccess)
+	}()
 	S.Lock()
 	S.hitExpirationService(key, ExpirationService.Lock)
 	ptr, ok := S.ptrs[key]
@@ -71,9 +76,6 @@ func (S *Shard) Put(key uint64, val []byte) error {
 	copy(S.array[dataIndex:dataIndex+dataLength], val)
 	S.size += LengthBytes
 	S.size += S.entrysize
-	S.hitExpirationService(key, ExpirationService.Access)
-	S.Unlock()
-	S.hitExpirationService(key, ExpirationService.AfterAccess)
 	return nil
 }
 
@@ -84,6 +86,11 @@ func (S *Shard) Put(key uint64, val []byte) error {
 func (S *Shard) Get(key uint64) ([]byte, bool) {
 	S.hitExpirationService(key, ExpirationService.BeforeLock)
 	S.RLock()
+	defer func() {
+		S.hitExpirationService(key, ExpirationService.Access)
+		S.RUnlock()
+		S.hitExpirationService(key, ExpirationService.AfterAccess)
+	}()
 	S.hitExpirationService(key, ExpirationService.Lock)
 	ptr, ok := S.ptrs[key]
 	if !ok {
@@ -93,9 +100,6 @@ func (S *Shard) Get(key uint64) ([]byte, bool) {
 	dataLength := binary.LittleEndian.Uint32(S.array[ptr:])
 	dst := make([]byte, dataLength)
 	copy(dst, S.array[dataIndex:dataIndex+dataLength])
-	S.hitExpirationService(key, ExpirationService.Access)
-	S.RUnlock()
-	S.hitExpirationService(key, ExpirationService.AfterAccess)
 	return dst, true
 }
 
