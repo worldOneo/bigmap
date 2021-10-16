@@ -6,7 +6,6 @@ import (
 	"time"
 )
 
-
 func TestShardSweepExpiration(t *testing.T) {
 	ShardExpiration(t, Expires(time.Second, ExpirationPolicySweep))
 }
@@ -94,4 +93,3 @@ func ShardExpiration(t *testing.T, factory ExpirationFactory) {
 		}
 	}
 }
-

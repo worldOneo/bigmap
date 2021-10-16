@@ -2,7 +2,7 @@ package bigmap
 
 import "time"
 
-// ExpirationPolicy determins the way expiration
+// ExpirationPolicy determines the way expiration
 // is treated within the a shard.
 type ExpirationPolicy uint64
 
@@ -28,7 +28,7 @@ const (
 	// could have a major impact in performance
 	// as each item must is checked on access
 	// and the shard must be writelocked while
-	// beeing cleaned.
+	// being cleaned.
 	ExpirationPolicySweep
 )
 

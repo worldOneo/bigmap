@@ -16,16 +16,16 @@ const (
 	items      = 20_000_000
 )
 
-var totall_accesses uint64
+var totallAccesses uint64
 
 func main() {
 	debug.SetGCPercent(10)
-	bench("StdMap_Put", benchmarkStdMap_Put)
-	bench("StdMap_Get", benchmarkStdMap_Get)
-	bench("StdMap_Del ", benchmarkStdMap_Delete)
-	bench("SyncMap_Put ", benchmarkSyncMap_Put)
-	bench("SyncMap_Get ", benchmarkSyncMap_Get)
-	bench("SyncMap_Del ", benchmarkSyncMap_Delete)
+	bench("StdMap_Put", benchmarkStdMapPut)
+	bench("StdMap_Get", benchmarkStdMapGet)
+	bench("StdMap_Del ", benchmarkStdMapDelete)
+	bench("SyncMap_Put ", benchmarkSyncMapPut)
+	bench("SyncMap_Get ", benchmarkSyncMapGet)
+	bench("SyncMap_Del ", benchmarkSyncMapDelete)
 
 	fmt.Println("==  Sync ==")
 	fmt.Println("Stdmap:")
@@ -42,7 +42,7 @@ func main() {
 	benchmarkGCPressure(mapGCAsync)
 	fmt.Println("Syncmap:")
 	benchmarkGCPressure(syncGCAsync)
-	fmt.Printf("Done! Totally generated %d keys\n", totall_accesses)
+	fmt.Printf("Done! Totally generated %d keys\n", totallAccesses)
 }
 
 func bench(n string, f func(b *testing.B)) {
@@ -211,14 +211,14 @@ func syncGCAsync(o int) {
 	wg.Wait()
 }
 
-func benchmarkStdMap_Put(b *testing.B) {
+func benchmarkStdMapPut(b *testing.B) {
 	mp := make(map[string][]byte)
 	for i := 0; i < b.N; i++ {
 		mp[key(i)] = val()
 	}
 }
 
-func benchmarkStdMap_Get(b *testing.B) {
+func benchmarkStdMapGet(b *testing.B) {
 	mp := make(map[string][]byte)
 	for i := 0; i < b.N; i++ {
 		mp[key(i)] = val()
@@ -229,7 +229,7 @@ func benchmarkStdMap_Get(b *testing.B) {
 	}
 }
 
-func benchmarkStdMap_Delete(b *testing.B) {
+func benchmarkStdMapDelete(b *testing.B) {
 	mp := make(map[string][]byte)
 	for i := 0; i < b.N; i++ {
 		mp[key(i)] = val()
@@ -240,14 +240,14 @@ func benchmarkStdMap_Delete(b *testing.B) {
 	}
 }
 
-func benchmarkSyncMap_Put(b *testing.B) {
+func benchmarkSyncMapPut(b *testing.B) {
 	mp := make(map[string][]byte)
 	for i := 0; i < b.N; i++ {
 		mp[key(i)] = val()
 	}
 }
 
-func benchmarkSyncMap_Get(b *testing.B) {
+func benchmarkSyncMapGet(b *testing.B) {
 	mp := make(map[string][]byte)
 	for i := 0; i < b.N; i++ {
 		mp[key(i)] = val()
@@ -258,7 +258,7 @@ func benchmarkSyncMap_Get(b *testing.B) {
 	}
 }
 
-func benchmarkSyncMap_Delete(b *testing.B) {
+func benchmarkSyncMapDelete(b *testing.B) {
 	mp := sync.Map{}
 	for i := 0; i < b.N; i++ {
 		mp.Store(key(i), val())
@@ -270,12 +270,12 @@ func benchmarkSyncMap_Delete(b *testing.B) {
 }
 
 func keySafe(j, i int) string {
-	totall_accesses++
+	totallAccesses++
 	return fmt.Sprintf("gen-%d-%d", j, i)
 }
 
 func key(i int) string {
-	totall_accesses++
+	totallAccesses++
 	return fmt.Sprintf("gen-%d", i)
 }
 
