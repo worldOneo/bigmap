@@ -15,7 +15,7 @@ func GenShardKeys(n int) []uint64 {
 }
 
 func WithShard(b *testing.B, populate bool, bench func(shard *Shard, keys []uint64)) {
-	shard := NewShard(1024, 100, 0)
+	shard := NewShard(1024, 100, nil)
 	keys := GenShardKeys(b.N)
 	if populate {
 		for i := 0; i < b.N; i++ {
@@ -37,7 +37,7 @@ func BenchmarkShard_Put(b *testing.B) {
 }
 
 func BenchmarkShard_Put_Stretched(b *testing.B) {
-	shard := NewShard(1024, 100, 0)
+	shard := NewShard(1024, 100, nil)
 	for i := 0; i < b.N/2; i++ {
 		shard.Put(FNV64(GenSafeKey("singly", i)), GenVal())
 	}
@@ -71,7 +71,7 @@ func BenchmarkShard_Delete(b *testing.B) {
 }
 
 func BenchmarkShard_Mix_Ballanced(b *testing.B) {
-	shard := NewShard(1024, 100, 0)
+	shard := NewShard(1024, 100, nil)
 	keys := GenShardKeys(b.N)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -83,7 +83,7 @@ func BenchmarkShard_Mix_Ballanced(b *testing.B) {
 }
 
 func BenchmarkShard_Mix_Unballanced(b *testing.B) {
-	shard := NewShard(1024, 100, 0)
+	shard := NewShard(1024, 100, nil)
 	keys := GenShardKeys(b.N)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -107,7 +107,7 @@ func TestShard(t *testing.T) {
 		keys[i] = RandomString(10)
 		vals[i] = RandomString(100)
 	}
-	shard := NewShard(1024, 1024, 0)
+	shard := NewShard(1024, 1024, nil)
 	for i, key := range keys {
 		err := shard.Put(FNV64(key), vals[i])
 		if err != nil {
@@ -128,41 +128,6 @@ func TestShard(t *testing.T) {
 
 		if !ok {
 			t.Fatalf("delete expected")
-		}
-	}
-}
-
-func TestExpiration(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
-	keys := make([][]byte, 4096*8)
-	vals := make([][]byte, 4096*8)
-	a := GenVal()
-	b := GenKey(1)
-	for i := range keys {
-		keys[i] = b
-		vals[i] = a
-	}
-	shard := NewShard(1024, 1024, time.Second*5)
-	for i, key := range keys {
-		err := shard.Put(FNV64(key), vals[i])
-		if err != nil {
-			t.Fatalf("shard put: %v", err)
-		}
-	}
-
-	for _, key := range keys {
-		_, ok := shard.Get(FNV64(key))
-
-		if !ok {
-			t.Fatalf("Expiration service swooped to early")
-		}
-	}
-	time.Sleep(time.Second * 6)
-	for i, key := range keys {
-		_, ok := shard.Get(FNV64(key))
-
-		if ok {
-			t.Fatalf("Expiration service didn't swoop well enough for key %s (idx: %d)", key, i)
 		}
 	}
 }

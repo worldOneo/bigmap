@@ -1,9 +1,5 @@
 package bigmap
 
-import (
-	"time"
-)
-
 const (
 	// DefaultCapacity is the default initial capacity of an shard in bytes
 	DefaultCapacity uint32 = 1024
@@ -35,30 +31,30 @@ type BigMap struct {
 
 // Config defines values for a BigMap.
 // Values which are 0 will become the default values.
-//
-// Shards is the amount of shards which
-// the map holds. The default is 16 and is
-// sufficient most of the time. Try to benchmark
-// your application to find out the shard amount
-// that fits you best.
-//
-// Capacity defines the initial capacity of shard.
-// This doesn't make a big difference in the long run
-// as shards just scale up and stop changing at some
-// time. But if you know your max capacity you can safe
-// some (if only very little) time avoiding the
-// resizing of shards.
-//
-// Expires defines the time (in ns) after items *can* be
-// removed. There is no guarantee that the item will be
-// removed exactly as the cleaner is only called after a
-// multiple of expires. For example: If an items expire after 2
-// seconds an item added at second 1 it will be removed in the
-// cleaning cycle of second 4
 type Config struct {
-	Shards   int
+	// Shards is the amount of shards which
+	// the map holds. The default is 16 and is
+	// sufficient most of the time. Try to benchmark
+	// your application to find out the shard amount
+	// that fits you best.
+	//
+	// Default: 16
+	Shards int
+	// Capacity defines the initial capacity of shard.
+	// This doesn't make a big difference in the long run
+	// as shards just scale up and stop changing at some
+	// time. But if you know your max capacity you can safe
+	// some (if only very little) time avoiding the
+	// resizing of shards.
+	//
+	// Default: 1024
 	Capacity uint32
-	Expires  time.Duration
+	// ExpirationFactory is used to create expirationServices
+	// for expiring items. An value of nil will result in no
+	// expiration of items.
+	//
+	// Default: nil
+	ExpirationFactory ExpirationFactory
 }
 
 // New creates a new BigMap and populates its shards.
@@ -70,29 +66,30 @@ type Config struct {
 // and/or enable expiration of items.
 // See bigmap.Config
 func New(entrysize uint32, config ...Config) BigMap {
-	cap := DefaultCapacity
-	shardcnt := DefaultShards
-	var expires time.Duration = 0
+	conf := Config{
+		Shards:            DefaultShards,
+		Capacity:          DefaultCapacity,
+		ExpirationFactory: nil,
+	}
 	if len(config) != 0 {
-		conf := config[0]
-		ncap := conf.Capacity
-		if ncap != 0 {
-			cap = ncap
+		firstConf := config[0]
+		if firstConf.Capacity != 0 {
+			conf.Capacity = firstConf.Capacity
 		}
-		nshards := conf.Shards
-		if nshards != 0 {
-			shardcnt = nshards
+		if firstConf.Shards != 0 {
+			conf.Shards = firstConf.Shards
 		}
-		nexpires := conf.Expires
-		if nexpires != 0 {
-			expires = nexpires
-		}
+		conf.ExpirationFactory = firstConf.ExpirationFactory
 	}
 
-	bm := BigMap{shards: make([]*Shard, shardcnt)}
+	bm := BigMap{shards: make([]*Shard, conf.Shards)}
 
-	for i := 0; i < shardcnt; i++ {
-		bm.shards[i] = NewShard(cap, entrysize, expires)
+	for i := 0; i < conf.Shards; i++ {
+		var expirationService ExpirationService = nil
+		if conf.ExpirationFactory != nil {
+			expirationService = conf.ExpirationFactory(i)
+		}
+		bm.shards[i] = NewShard(conf.Capacity, entrysize, expirationService)
 	}
 	return bm
 }
@@ -122,16 +119,16 @@ func (B *BigMap) Put(key []byte, val []byte) error {
 	return s.Put(h, val)
 }
 
-// Get retrieves an item from the corresponding shard for the key.
+// Get retrieves an item for the key.
 // It returns a copy of the corresponding byte slice
-// and a boolean if the items was contained. If the boolean
+// and a boolean if the item was contained. If the boolean
 // is false the slice will be nil.
 func (B *BigMap) Get(key []byte) ([]byte, bool) {
 	s, h := B.SelectShard(key)
 	return s.Get(h)
 }
 
-// Delete removes an item from the corresponding shard for the key.
+// Delete removes an item from the map.
 // Delete doesnt shrink the memory size of the map.
 // It only enables the space to be reused.
 func (B *BigMap) Delete(key []byte) bool {

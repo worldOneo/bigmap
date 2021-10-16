@@ -1,54 +1,30 @@
 package bigmap
 
-import (
-	"sync"
-	"time"
-)
-
-type expirationService struct {
-	sync.Mutex
-	accesses  map[uint64]int64
-	shard     *Shard
-	lastCheck int64
-	Expires   int64
-}
-
-func newExpirationService(shard *Shard, expires time.Duration) *expirationService {
-	expSrv := &expirationService{
-		accesses: make(map[uint64]int64),
-		shard:    shard,
-		Expires:  int64(expires),
-	}
-	return expSrv
-}
-
-func (E *expirationService) expirationCheck() {
-	now := time.Now().UnixNano()
-	if now-E.lastCheck < E.Expires {
-		return
-	}
-	locked := false
-	for k, v := range E.accesses {
-		if now-v > E.Expires {
-			if !locked {
-				locked = true
-				E.shard.Lock()
-				defer E.shard.Unlock()
-			}
-			E.shard.unsafeDelete(k)
-			delete(E.accesses, k)
-		}
-	}
-	E.lastCheck = now
-}
-
-func (E *expirationService) hit(key uint64) {
-	E.Lock()
-	defer E.Unlock()
-	E.expirationCheck()
-	E.accesses[key] = time.Now().UnixNano()
-}
-
-func (E *expirationService) remove(key uint64) {
-	delete(E.accesses, key)
+// ExpirationService is the interface used for expiring items within a shard
+type ExpirationService interface {
+	// BeforeLock is called before the shard was accessed (put or get
+	// and before the shard is locked with the key which is about to
+	//be accessed. Accessing the shard from this method can not cause
+	// any deadlock between the shard and the ExpirationService.
+	BeforeLock(key uint64, shard *Shard)
+	// Lock is called before the shard was accessed (put or get
+	// and after the shard is locked with the key which is about to
+	// be accessed. Accessing the shard from this method
+	// might cause a deadlock.
+	Lock(key uint64, shard *Shard)
+	// Access is called after the shard was accessed (put or get and before
+	// it is unlocked. Accessing the shard from this method
+	// might cause a deadlock.
+	// If an item should be removed in the lock shard.UnsafeDelete
+	// is safe inside this function call.
+	Access(key uint64, shard *Shard)
+	// AfterAccess is called after the shard was accessed (put or get) after
+	// unlocking it.
+	// Accessing the shard from this method can not cause
+	// any deadlock between the shard and the ExpirationService.
+	AfterAccess(key uint64, shard *Shard)
+	// Remove is called before the shard is changed (the item associated
+	// with the key will be removed) and after it was locked.
+	// Accessing the shard from this method might cause a deadlock.
+	Remove(key uint64, shard *Shard)
 }

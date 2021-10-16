@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sync"
-	"time"
 )
 
 // Shard is a fraction of a bigmap.
@@ -22,7 +21,7 @@ type Shard struct {
 	entrysize uint32
 	array     []byte
 	buff      []byte
-	expSrv    *expirationService
+	expSrv    ExpirationService
 }
 
 // NewShard initializes a new shard.
@@ -32,7 +31,7 @@ type Shard struct {
 // Expires defines the time after items can be removed.
 // If expires is smaller or equals 0 it will be ignored and
 // items wont be removed automatically.
-func NewShard(capacity, entrysize uint32, expires time.Duration) *Shard {
+func NewShard(capacity, entrysize uint32, expSrv ExpirationService) *Shard {
 	shrd := &Shard{
 		ptrs:      make(map[uint64]uint32),
 		free:      make([]uint32, 1024),
@@ -40,9 +39,7 @@ func NewShard(capacity, entrysize uint32, expires time.Duration) *Shard {
 		entrysize: entrysize,
 		array:     make([]byte, capacity),
 		buff:      make([]byte, LengthBytes),
-	}
-	if expires > 0 {
-		shrd.expSrv = newExpirationService(shrd, expires)
+		expSrv: expSrv,
 	}
 	return shrd
 }
@@ -54,9 +51,9 @@ func (S *Shard) Put(key uint64, val []byte) error {
 		_lval := dataLength
 		return fmt.Errorf("shard put: value size to long (%d > %d)", _lval, S.entrysize)
 	}
-	S.hitIfExpires(key)
+	S.hitExpirationService(key, ExpirationService.BeforeLock)
 	S.Lock()
-	defer S.Unlock()
+	S.hitExpirationService(key, ExpirationService.Lock)
 	ptr, ok := S.ptrs[key]
 	if !ok {
 		if S.freecdx < S.freeidx {
@@ -74,6 +71,9 @@ func (S *Shard) Put(key uint64, val []byte) error {
 	copy(S.array[dataIndex:dataIndex+dataLength], val)
 	S.size += LengthBytes
 	S.size += S.entrysize
+	S.hitExpirationService(key, ExpirationService.Access)
+	S.Unlock()
+	S.hitExpirationService(key, ExpirationService.AfterAccess)
 	return nil
 }
 
@@ -82,9 +82,9 @@ func (S *Shard) Put(key uint64, val []byte) error {
 // and a boolean if the items was contained if the boolean
 // is false the slice will be nil.
 func (S *Shard) Get(key uint64) ([]byte, bool) {
-	S.hitIfExpires(key)
+	S.hitExpirationService(key, ExpirationService.BeforeLock)
 	S.RLock()
-	defer S.RUnlock()
+	S.hitExpirationService(key, ExpirationService.Lock)
 	ptr, ok := S.ptrs[key]
 	if !ok {
 		return nil, false
@@ -93,25 +93,28 @@ func (S *Shard) Get(key uint64) ([]byte, bool) {
 	dataLength := binary.LittleEndian.Uint32(S.array[ptr:])
 	dst := make([]byte, dataLength)
 	copy(dst, S.array[dataIndex:dataIndex+dataLength])
+	S.hitExpirationService(key, ExpirationService.Access)
+	S.RUnlock()
+	S.hitExpirationService(key, ExpirationService.AfterAccess)
 	return dst, true
 }
 
 // Delete removes an item from the shard.
+// And returns true if an item was deleted and
+// false if the key didn't exist in the shard.
 // Delete doesnt shrink the size of the byte-array
 // nor of the shard.
 // It only enables the space to be reused.
 func (S *Shard) Delete(key uint64) bool {
-	if S.expSrv != nil {
-		S.expSrv.remove(key)
-	}
 	S.Lock()
 	defer S.Unlock()
-	return S.unsafeDelete(key)
+	S.hitExpirationService(key, ExpirationService.Remove)
+	return S.UnsafeDelete(key)
 }
 
-// unsafeDelete deltes an object but requires the shard to be locked.
-// It will not be locked automagically by this function.
-func (S *Shard) unsafeDelete(key uint64) bool {
+// UnsafeDelete deletes an object without locking the shard.
+// If no manual locking is provided data races may occur.
+func (S *Shard) UnsafeDelete(key uint64) bool {
 	ptr, ok := S.ptrs[key]
 	if ok {
 		delete(S.ptrs, key)
@@ -143,8 +146,8 @@ func (S *Shard) sizeCheck(add uint32) {
 	}
 }
 
-func (S *Shard) hitIfExpires(key uint64) {
+func (S *Shard) hitExpirationService(key uint64, hit func(ExpirationService, uint64, *Shard)) {
 	if S.expSrv != nil {
-		S.expSrv.hit(key)
+		hit(S.expSrv, key, S)
 	}
 }
