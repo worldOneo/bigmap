@@ -14,9 +14,7 @@ import (
 type Shard struct {
 	sync.RWMutex
 	ptrs      map[uint64]uint32
-	free      []uint32
-	freeidx   int // Position of insertion of free pointers
-	freecdx   int // Position of claiming of free pointers
+	freePtrs  *PointerQueue
 	size      uint32
 	entrysize uint32
 	array     []byte
@@ -34,7 +32,7 @@ type Shard struct {
 func NewShard(capacity, entrysize uint32, expSrv ExpirationService) *Shard {
 	shrd := &Shard{
 		ptrs:      make(map[uint64]uint32),
-		free:      make([]uint32, 1024),
+		freePtrs:  NewPointerQueue(),
 		size:      0,
 		entrysize: entrysize,
 		array:     make([]byte, capacity),
@@ -61,10 +59,8 @@ func (S *Shard) Put(key uint64, val []byte) error {
 	S.hitExpirationService(key, ExpirationService.Lock)
 	ptr, ok := S.ptrs[key]
 	if !ok {
-		if S.freecdx < S.freeidx {
-			ptr = S.free[S.freecdx]
-			S.freecdx++
-		} else {
+		ptr, ok = S.freePtrs.Dequeue()
+		if !ok {
 			ptr = S.size
 			S.sizeCheck(dataLength + LengthBytes)
 		}
@@ -122,20 +118,7 @@ func (S *Shard) UnsafeDelete(key uint64) bool {
 	ptr, ok := S.ptrs[key]
 	if ok {
 		delete(S.ptrs, key)
-		S.free[S.freeidx] = ptr
-		S.freeidx++
-		lfree := len(S.free)
-		if S.freeidx >= lfree {
-			if len(S.free)-S.freecdx < lfree/2 {
-				copy(S.free, S.free[S.freecdx:])
-			} else {
-				a := make([]uint32, len(S.free)*2)
-				copy(a, S.free[S.freecdx:])
-				S.free = a
-			}
-			S.freeidx -= S.freecdx
-			S.freecdx = 0
-		}
+		S.freePtrs.Enqueue(ptr)
 	}
 	return ok
 }
