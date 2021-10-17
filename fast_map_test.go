@@ -12,12 +12,16 @@ func BenchmarkStdMap_Set(b *testing.B) {
 	}
 }
 
-func BenchmarkPointerIndex_Put(b *testing.B) {
-	mp := NewPointerIndex()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+func fullMap(n int) *FastMap {
+	mp := NewFastMap()
+	for i := 0; i < n; i++ {
 		mp.Put(uint64(i), uint32(i))
 	}
+	return mp
+}
+
+func BenchmarkFastMap_Put(b *testing.B) {
+	fullMap(b.N)
 }
 
 func BenchmarkStdMap_Get(b *testing.B) {
@@ -31,8 +35,8 @@ func BenchmarkStdMap_Get(b *testing.B) {
 	}
 }
 
-func BenchmarkPointerIndex_Get(b *testing.B) {
-	mp := NewPointerIndex()
+func BenchmarkFastMap_Get(b *testing.B) {
+	mp := fullMap(b.N)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = mp.Get(uint64(i))
@@ -50,33 +54,20 @@ func BenchmarkStdMap_Delete(b *testing.B) {
 	}
 }
 
-func TestPointerIndex_Fill(t *testing.T) {
-	mp := NewPointerIndex()
-	for i := 0; i < 4096*8; i++ {
-		mp.Put(uint64(i), uint32(i))
-	}
-}
-
-func BenchmarkPointerIndex_Delete(b *testing.B) {
-	mp := NewPointerIndex()
+func BenchmarkFastMap_Delete(b *testing.B) {
+	mp := fullMap(b.N)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, _ = mp.Delete(uint64(i))
 	}
 }
 
-func TestPointerIndex_Put(t *testing.T) {
-	mp := NewPointerIndex()
-	for i := 0; i < 3000; i++ {
-		mp.Put(uint64(i), uint32(i))
-	}
+func TestFastMap_Put(t *testing.T) {
+	fullMap(3000)
 }
 
-func TestPointerIndex_Get(t *testing.T) {
-	mp := NewPointerIndex()
-	for i := 0; i < 3000; i++ {
-		mp.Put(uint64(i), uint32(i))
-	}
+func TestFastMap_Get(t *testing.T) {
+	mp := fullMap(3000)
 	for i := 0; i < 3000; i++ {
 		v, ok := mp.Get(uint64(i))
 		if v != uint32(i) || !ok {
@@ -89,11 +80,8 @@ func TestPointerIndex_Get(t *testing.T) {
 	}
 }
 
-func TestPointerIndex_Delete(t *testing.T) {
-	mp := NewPointerIndex()
-	for i := 0; i < 3000; i++ {
-		mp.Put(uint64(i), uint32(i))
-	}
+func TestFastMap_Delete(t *testing.T) {
+	mp := fullMap(3000)
 	for i := 0; i < 3000; i++ {
 		v, ok := mp.Delete(uint64(i))
 		if v != uint32(i) || !ok {

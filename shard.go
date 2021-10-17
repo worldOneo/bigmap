@@ -13,7 +13,7 @@ import (
 // and RLocks itself while Get
 type Shard struct {
 	sync.RWMutex
-	ptrs      *PointerIndex
+	ptrs      *FastMap
 	freePtrs  *PointerQueue
 	size      uint32
 	entrysize uint32
@@ -31,7 +31,7 @@ type Shard struct {
 // items wont be removed automatically.
 func NewShard(capacity, entrysize uint32, expSrv ExpirationService) *Shard {
 	shrd := &Shard{
-		ptrs:      NewPointerIndex(),
+		ptrs:      NewFastMap(),
 		freePtrs:  NewPointerQueue(),
 		size:      0,
 		entrysize: entrysize,
@@ -62,7 +62,7 @@ func (S *Shard) Put(key uint64, val []byte) error {
 		ptr, ok = S.freePtrs.Dequeue()
 		if !ok {
 			ptr = S.size
-			S.sizeCheck(S.entrysize + LengthBytes)
+			S.sizeCheck()
 		}
 		S.ptrs.Put(key, ptr)
 	}
@@ -122,9 +122,9 @@ func (S *Shard) UnsafeDelete(key uint64) bool {
 	return ok
 }
 
-func (S *Shard) sizeCheck(add uint32) {
+func (S *Shard) sizeCheck() {
 	l := uint32(len(S.array))
-	for l < S.size+S.entrysize {
+	for l < S.size + S.entrysize + LengthBytes {
 		l *= 2
 		b := make([]byte, l)
 		copy(b, S.array)

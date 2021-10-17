@@ -261,9 +261,10 @@ func GenMapKeys(n int) [][]byte {
 
 func PopulateMap(n int, bm *BigMap) [][]byte {
 	keys := make([][]byte, n)
+	val := GenVal()
 	for i := 0; i < n; i++ {
 		keys[i] = GenKey(i)
-		bm.Put(keys[i], GenVal())
+		bm.Put(keys[i], val)
 	}
 	return keys
 }
