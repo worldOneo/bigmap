@@ -13,7 +13,7 @@ import (
 // and RLocks itself while Get
 type Shard struct {
 	sync.RWMutex
-	ptrs      *FastMap
+	ptrs      map[uint64]uint32
 	freePtrs  *PointerQueue
 	size      uint32
 	entrysize uint32
@@ -31,7 +31,7 @@ type Shard struct {
 // items wont be removed automatically.
 func NewShard(capacity, entrysize uint32, expSrv ExpirationService) *Shard {
 	shrd := &Shard{
-		ptrs:      NewFastMap(),
+		ptrs:      make(map[uint64]uint32),
 		freePtrs:  NewPointerQueue(),
 		size:      0,
 		entrysize: entrysize,
@@ -57,18 +57,17 @@ func (S *Shard) Put(key uint64, val []byte) error {
 	}()
 	S.Lock()
 	S.hitExpirationService(key, ExpirationService.Lock)
-	ptr, ok := S.ptrs.Get(key)
+	ptr, ok := S.ptrs[key]
 	if !ok {
 		ptr, ok = S.freePtrs.Dequeue()
 		if !ok {
 			ptr = S.size
-			S.sizeCheck()
+			S.sizeCheck(dataLength + LengthBytes)
 		}
-		S.ptrs.Put(key, ptr)
+		S.ptrs[key] = ptr
 	}
 	dataIndex := ptr + LengthBytes
-	binary.LittleEndian.PutUint32(S.buff, dataLength)
-	copy(S.array[ptr:dataIndex], S.buff)
+	binary.LittleEndian.PutUint32(S.array[ptr:dataIndex], dataLength)
 	copy(S.array[dataIndex:dataIndex+dataLength], val)
 	S.size += LengthBytes
 	S.size += S.entrysize
@@ -88,7 +87,7 @@ func (S *Shard) Get(key uint64) ([]byte, bool) {
 		S.hitExpirationService(key, ExpirationService.AfterAccess)
 	}()
 	S.hitExpirationService(key, ExpirationService.Lock)
-	ptr, ok := S.ptrs.Get(key)
+	ptr, ok := S.ptrs[key]
 	if !ok {
 		return nil, false
 	}
@@ -115,16 +114,17 @@ func (S *Shard) Delete(key uint64) bool {
 // UnsafeDelete deletes an object without locking the shard.
 // If no manual locking is provided data races may occur.
 func (S *Shard) UnsafeDelete(key uint64) bool {
-	ptr, ok := S.ptrs.Delete(key)
+	ptr, ok := S.ptrs[key]
 	if ok {
+		delete(S.ptrs, key)
 		S.freePtrs.Enqueue(ptr)
 	}
 	return ok
 }
 
-func (S *Shard) sizeCheck() {
+func (S *Shard) sizeCheck(add uint32) {
 	l := uint32(len(S.array))
-	for l < S.size + S.entrysize + LengthBytes {
+	for l < S.size+add {
 		l *= 2
 		b := make([]byte, l)
 		copy(b, S.array)

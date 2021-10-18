@@ -6,7 +6,7 @@ Inspired by [allegro/bigcache](https://github.com/allegro/bigcache/)
 
 ## Fast
 
-The average operation is done in **under 0.1μs** and can therefore be done over **10 Million times / second**.  
+Most operations are done in **under 0.3μs** and can therefore be done over **3 Million times / second**.  
 And all this **per thread**. This is achieved by storing the objects in one single byte-slice and having a Zero-Allocation, Share-Nothing oriented design.  
 Resulting in **minimimal GC pressure** and **maximal performance**.
 
@@ -15,7 +15,7 @@ Resulting in **minimimal GC pressure** and **maximal performance**.
 The map has **no global lock**.  
 It is split into **multiple shards** which are locked individual.  
 As the benchmarks show bigmap **gains from concurrent access**.  
-With preallocations and items having a max size it is significant **faster than the standard map**.
+With preallocations and items having a max size it is **faster than the standard map**.
 
 ## Scaling
 
@@ -28,41 +28,61 @@ Each shard can store gigabytes of data without loosing performance, so it is goo
 ### Sync
 | | Time | diff | GC Pause total | GC Diff |
 | --- | --- |--- | --- | --- |
-| **BigMap** | 53s | +0% | 4ms | 0% |
-| **StdMap** | 2m36s | +294% | 20.2ms | +505% |
-| **Syncmap** | 7m24s | +853% | 17ms | +425% |
+| **BigMap** | 2m6s | 0% | 8ms | 0% |
+| **StdMap** | 3m31s | +67% | 18.6ms | +132% |
+| **Syncmap** | 9m54s | +371% | 18.3ms | +128% |
  
 ### Async
 | | Time | diff |
 | --- | --- |--- |
-| **BigMap** | 24.9s | +0% |
-| **StdMap** (synced with RWMutex) | 3m41s | +887% |
-| **Syncmap** | 7m32.9s | +1.875% |
+| **BigMap** | 38.1s | 0% |
+| **StdMap** (synced with RWMutex) | 4m32s | +456% |
+| **Syncmap** | 10m35.6s | +1.568% |
 
 ## Benchmarks
 
 The benchmarks are done on a machine with an i7-8750H CPU (12x 2.20 - 4GHz), 16GB  RAM (2666 MHz), Windows 10 machine
-_I can't do any bigger benchmarks becaus that would mean I needed to populate maps bigger than my memory_
 ```sh
 go version
 go version go1.17.2 windows/amd64
 
-go test -benchmem -run=^$ -bench BenchmarkBigMap_.* github.com/worldOneo/bigmap -benchtime 1s
+go test -benchmem -run=^$ -bench .* github.com/worldOneo/bigmap -benchtime=2s
 
 BenchmarkGenKey-12                              20750223               113.5 ns/op            24 B/op          2 allocs/op
 BenchmarkFNV64-12                               472440758                5.106 ns/op           0 B/op          0 allocs/op
-BenchmarkBigMap_Put-12                           7841419               149.1 ns/op           273 B/op          0 allocs/op
-BenchmarkBigMap_Get-12                          41903976                34.56 ns/op            0 B/op          0 allocs/op
-BenchmarkBigMap_Delete-12                       26086956                44.28 ns/op           10 B/op          0 allocs/op
-BenchmarkBigMap_Mix_Ballanced-12                29894546                40.24 ns/op            0 B/op          0 allocs/op
-BenchmarkBigMap_Mix_Unballanced-12              19918322                66.17 ns/op          111 B/op          0 allocs/op
+BenchmarkBigMap_Put-12                           7318198               350.4 ns/op           368 B/op          0 allocs/op
+BenchmarkBigMap_Get-12                          11111563               233.0 ns/op           112 B/op          1 allocs/op
+BenchmarkBigMap_Delete-12                       16521562               168.9 ns/op             8 B/op          0 allocs/op
+BenchmarkBigMap_Mix_Ballanced-12                40484532                59.73 ns/op           37 B/op          0 allocs/op
+BenchmarkBigMap_Mix_Unballanced-12              13838244               207.8 ns/op           139 B/op          0 allocs/op
+BenchmarkShard_Put-12                            8765626               290.1 ns/op           308 B/op          0 allocs/op
+BenchmarkShard_Put_Stretched-12                 10666585               249.1 ns/op           228 B/op          0 allocs/op
+BenchmarkShard_Get-12                           17142880               160.7 ns/op           112 B/op          1 allocs/op
+BenchmarkShard_Delete-12                        20168134               155.1 ns/op            13 B/op          0 allocs/op
+BenchmarkShard_Mix_Ballanced-12                 49782512                46.73 ns/op           37 B/op          0 allocs/op
+BenchmarkShard_Mix_Unballanced-12               17025538               184.8 ns/op           184 B/op          0 allocs/op
 # Parallel benchmarks have allocations because of the key generation (113.5ns; 2 allocs/op).
 # That also slows them down a little but this is required for the parallel test.
-BenchmarkBigMap_Put_Parallel-12                 10720135               145.4 ns/op           456 B/op          2 allocs/op
-BenchmarkBigMap_Get_Parallel-12                 30789361                45.67 ns/op           39 B/op          2 allocs/op
-BenchmarkBigMap_Delete_Parallel-12              18111045                66.87 ns/op           54 B/op          2 allocs/op
-BenchmarkBigMap_Mix_Ballanced_Parallel-12       10256593               108.7 ns/op           107 B/op          2 allocs/op
-BenchmarkBigMap_Mix_Unballanced_Parallel-12     10000141               107.8 ns/op           111 B/op          2 allocs/op
+BenchmarkBigMap_Put_Parallel-12                 14182803               175.8 ns/op           436 B/op          3 allocs/op
+BenchmarkBigMap_Get_Parallel-12                 35819558                71.89 ns/op          115 B/op          3 allocs/op
+BenchmarkBigMap_Delete_Parallel-12              29999961                84.62 ns/op           48 B/op          2 allocs/op
+BenchmarkBigMap_Mix_Ballanced_Parallel-12       16380764               153.9 ns/op           204 B/op          3 allocs/op
+BenchmarkBigMap_Mix_Unballanced_Parallel-12     13714394               155.8 ns/op           145 B/op          3 allocs/op
+
+
+go test -benchmem -bench BenchmarkBigMap_Goroutines -benchtime=2s
+goos: windows
+goarch: amd64
+pkg: github.com/worldOneo/bigmap
+cpu: Intel(R) Core(TM) i7-8750H CPU @ 2.20GHz
+ === 
+Benchmarking with 480000 routines
+ ===
+BenchmarkBigMap_Goroutines/BigMap_Put_Parallel-12                8461524               290.9 ns/op           374 B/op          2 allocs/op
+BenchmarkBigMap_Goroutines/BigMap_Get_Parallel-12               32871289                96.97 ns/op           41 B/op          3 allocs/op
+BenchmarkBigMap_Goroutines/BigMap_Delete_Parallel-12            27436130                90.82 ns/op           38 B/op          2 allocs/op
+BenchmarkBigMap_Goroutines/BigMap_Mix_Parallel-12               10230573               225.8 ns/op           181 B/op          2 allocs/op
+BenchmarkBigMap_Goroutines/BigMap_Mix_Unbalanced_Parallel-12     8242996               281.3 ns/op           200 B/op          2 allocs/op
 ```
 
 ## Attention
