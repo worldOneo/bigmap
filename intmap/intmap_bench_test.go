@@ -1,6 +1,8 @@
 package intmap
 
-import "testing"
+import (
+	"testing"
+)
 
 func filledStd(n KeyType) map[uint64]uint64 {
 	m := make(map[uint64]uint64)

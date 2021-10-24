@@ -11,7 +11,7 @@ const (
 type KeyType = uint64
 
 // ValType is the type of the values for this map
-type ValType = uint32
+type ValType = uint64
 
 // IntMap to store uint64->uint32 relations
 type IntMap struct {

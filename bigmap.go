@@ -2,11 +2,11 @@ package bigmap
 
 const (
 	// DefaultCapacity is the default initial capacity of an shard in bytes
-	DefaultCapacity uint32 = 1024
+	DefaultCapacity uint64 = 1024
 	// DefaultShards is the default amount of shards in a BigMap
-	DefaultShards int = 16
+	DefaultShards int = 32
 	// LengthBytes is the amount of bytes required to define the length
-	LengthBytes uint32 = 4
+	LengthBytes uint64 = 8
 	// Offset64 is the offset for FNV64
 	Offset64 = 14695981039346656037
 	// Prime64 is the prime for FNV64
@@ -48,7 +48,7 @@ type Config struct {
 	// resizing of shards.
 	//
 	// Default: 1024
-	Capacity uint32
+	Capacity uint64
 	// ExpirationFactory is used to create expirationServices
 	// for expiring items. An value of nil will result in no
 	// expiration of items.
@@ -65,7 +65,7 @@ type Config struct {
 // A config may be provided to tune the map as needed
 // and/or enable expiration of items.
 // See bigmap.Config
-func New(entrysize uint32, config ...Config) BigMap {
+func New(entrysize uint64, config ...Config) BigMap {
 	conf := Config{
 		Shards:            DefaultShards,
 		Capacity:          DefaultCapacity,
