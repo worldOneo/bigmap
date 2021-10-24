@@ -291,7 +291,6 @@ func GenVal() []byte {
 }
 
 func TestBigMap(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
 	keys := make([][]byte, 4096*8)
 	vals := make([][]byte, 4096*8)
 	for i := range keys {
@@ -329,4 +328,22 @@ func TestBigMap(t *testing.T) {
 		}
 	}
 
+}
+
+
+func TestBigMap_New_config(t *testing.T) {
+	bigmap := New(100, Config{
+		Shards: 3,
+		Capacity: 128,
+		ExpirationFactory: Expires(time.Hour, ExpirationPolicyPassive),
+	})
+	if len(bigmap.shards) != 3 {
+		t.Fatalf("Failed to configure shards got %d, want %d", len(bigmap.shards), 3)
+	}
+	if len(bigmap.shards[0].array) != 128 {
+		t.Fatalf("Failed to configure capacity got %d, want %d", len(bigmap.shards[0].array), 128)
+	}
+	if bigmap.shards[0].expSrv == nil {
+		t.Fatalf("Failed to configure expiration got nil, want !nil")
+	}
 }

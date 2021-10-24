@@ -73,9 +73,8 @@ func benchmarkGCPressure(a func(i int)) {
 }
 
 func bigmapGC(n int) {
-	bigmap := bigmap.New(100, bigmap.Config{
-		Shards:   16,
-		Capacity: 536870900,
+	bigmap := bigmap.New(64, bigmap.Config{
+		Shards: runtime.NumCPU(),
 	})
 	for i := 0; i < n; i++ {
 		k := []byte(key(i))
@@ -124,7 +123,9 @@ func syncmapGC(n int) {
 }
 
 func bigmapGCAsync(o int) {
-	mp := bigmap.New(100)
+	mp := bigmap.New(64, bigmap.Config{
+		Shards: runtime.NumCPU(),
+	})
 
 	wg := sync.WaitGroup{}
 	n := o / runtime.GOMAXPROCS(0)
@@ -280,5 +281,5 @@ func key(i int) string {
 }
 
 func val() []byte {
-	return make([]byte, 100)
+	return make([]byte, 64)
 }
