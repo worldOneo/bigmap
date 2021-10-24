@@ -131,7 +131,7 @@ func TestShard(t *testing.T) {
 
 func TestShard_Put_insertToBig(t *testing.T) {
 	shard := NewShard(1024, 100, nil)
-	err := shard.Put(123, []byte(RandomString(111)));
+	err := shard.Put(123, []byte(RandomString(111)))
 	if err == nil {
 		t.Fatal("To big insert got nil, want err")
 	}

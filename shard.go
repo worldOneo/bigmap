@@ -17,10 +17,9 @@ type Shard struct {
 	sync.RWMutex
 	ptrs      *intmap.IntMap
 	freePtrs  *PointerQueue
-	size      uint32
-	entrysize uint32
+	size      uint64
+	entrysize uint64
 	array     []byte
-	buff      []byte
 	expSrv    ExpirationService
 }
 
@@ -31,14 +30,13 @@ type Shard struct {
 // Expires defines the time after items can be removed.
 // If expires is smaller or equals 0 it will be ignored and
 // items wont be removed automatically.
-func NewShard(capacity, entrysize uint32, expSrv ExpirationService) *Shard {
+func NewShard(capacity, entrysize uint64, expSrv ExpirationService) *Shard {
 	shrd := &Shard{
 		ptrs:      intmap.New(),
 		freePtrs:  NewPointerQueue(),
 		size:      0,
 		entrysize: entrysize,
 		array:     make([]byte, capacity),
-		buff:      make([]byte, LengthBytes),
 		expSrv:    expSrv,
 	}
 	return shrd
@@ -46,10 +44,11 @@ func NewShard(capacity, entrysize uint32, expSrv ExpirationService) *Shard {
 
 // Put adds or overwrites an item in(to) the shards internal byte-array.
 func (S *Shard) Put(key uint64, val []byte) error {
-	dataLength := uint32(len(val))
+	dataLength := uint64(len(val))
 	if dataLength > S.entrysize {
 		_lval := dataLength
-		return fmt.Errorf("shard put: value size to long (%d > %d)", _lval, S.entrysize)
+		maxSize := S.entrysize
+		return fmt.Errorf("shard put: value size to long (%d > %d)", _lval, maxSize)
 	}
 	S.hitExpirationService(key, ExpirationService.BeforeLock)
 	defer func() {
@@ -64,12 +63,12 @@ func (S *Shard) Put(key uint64, val []byte) error {
 		ptr, ok = S.freePtrs.Dequeue()
 		if !ok {
 			ptr = S.size
-			S.sizeCheck(dataLength + LengthBytes)
+			S.sizeCheck(S.entrysize + LengthBytes)
 		}
 		S.ptrs.Put(key, ptr)
 	}
 	dataIndex := ptr + LengthBytes
-	binary.LittleEndian.PutUint32(S.array[ptr:dataIndex], dataLength)
+	binary.LittleEndian.PutUint64(S.array[ptr:dataIndex], dataLength)
 	copy(S.array[dataIndex:dataIndex+dataLength], val)
 	S.size += LengthBytes
 	S.size += S.entrysize
@@ -94,7 +93,7 @@ func (S *Shard) Get(key uint64) ([]byte, bool) {
 		return nil, false
 	}
 	dataIndex := ptr + LengthBytes
-	dataLength := binary.LittleEndian.Uint32(S.array[ptr:])
+	dataLength := binary.LittleEndian.Uint64(S.array[ptr:])
 	dst := make([]byte, dataLength)
 	copy(dst, S.array[dataIndex:dataIndex+dataLength])
 	return dst, true
@@ -123,8 +122,8 @@ func (S *Shard) UnsafeDelete(key uint64) bool {
 	return ok
 }
 
-func (S *Shard) sizeCheck(add uint32) {
-	l := uint32(len(S.array))
+func (S *Shard) sizeCheck(add uint64) {
+	l := uint64(len(S.array))
 	for l < S.size+add {
 		l *= 2
 		b := make([]byte, l)

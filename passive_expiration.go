@@ -4,7 +4,6 @@ import "time"
 
 type passiveExpirationService struct {
 	accesses  map[uint64]int64
-	lastCheck int64
 	Expires   int64
 }
 
