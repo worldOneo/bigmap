@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sync"
+
+	"github.com/worldOneo/bigmap/intmap"
 )
 
 // Shard is a fraction of a bigmap.
@@ -13,10 +15,8 @@ import (
 // and RLocks itself while Get
 type Shard struct {
 	sync.RWMutex
-	ptrs      map[uint64]uint32
-	free      []uint32
-	freeidx   int // Position of insertion of free pointers
-	freecdx   int // Position of claiming of free pointers
+	ptrs      *intmap.IntMap
+	freePtrs  *PointerQueue
 	size      uint32
 	entrysize uint32
 	array     []byte
@@ -33,8 +33,8 @@ type Shard struct {
 // items wont be removed automatically.
 func NewShard(capacity, entrysize uint32, expSrv ExpirationService) *Shard {
 	shrd := &Shard{
-		ptrs:      make(map[uint64]uint32),
-		free:      make([]uint32, 1024),
+		ptrs:      intmap.New(),
+		freePtrs:  NewPointerQueue(),
 		size:      0,
 		entrysize: entrysize,
 		array:     make([]byte, capacity),
@@ -59,20 +59,17 @@ func (S *Shard) Put(key uint64, val []byte) error {
 	}()
 	S.Lock()
 	S.hitExpirationService(key, ExpirationService.Lock)
-	ptr, ok := S.ptrs[key]
+	ptr, ok := S.ptrs.Get(key)
 	if !ok {
-		if S.freecdx < S.freeidx {
-			ptr = S.free[S.freecdx]
-			S.freecdx++
-		} else {
+		ptr, ok = S.freePtrs.Dequeue()
+		if !ok {
 			ptr = S.size
 			S.sizeCheck(dataLength + LengthBytes)
 		}
-		S.ptrs[key] = ptr
+		S.ptrs.Put(key, ptr)
 	}
 	dataIndex := ptr + LengthBytes
-	binary.LittleEndian.PutUint32(S.buff, dataLength)
-	copy(S.array[ptr:dataIndex], S.buff)
+	binary.LittleEndian.PutUint32(S.array[ptr:dataIndex], dataLength)
 	copy(S.array[dataIndex:dataIndex+dataLength], val)
 	S.size += LengthBytes
 	S.size += S.entrysize
@@ -92,7 +89,7 @@ func (S *Shard) Get(key uint64) ([]byte, bool) {
 		S.hitExpirationService(key, ExpirationService.AfterAccess)
 	}()
 	S.hitExpirationService(key, ExpirationService.Lock)
-	ptr, ok := S.ptrs[key]
+	ptr, ok := S.ptrs.Get(key)
 	if !ok {
 		return nil, false
 	}
@@ -119,23 +116,9 @@ func (S *Shard) Delete(key uint64) bool {
 // UnsafeDelete deletes an object without locking the shard.
 // If no manual locking is provided data races may occur.
 func (S *Shard) UnsafeDelete(key uint64) bool {
-	ptr, ok := S.ptrs[key]
+	ptr, ok := S.ptrs.Delete(key)
 	if ok {
-		delete(S.ptrs, key)
-		S.free[S.freeidx] = ptr
-		S.freeidx++
-		lfree := len(S.free)
-		if S.freeidx >= lfree {
-			if len(S.free)-S.freecdx < lfree/2 {
-				copy(S.free, S.free[S.freecdx:])
-			} else {
-				a := make([]uint32, len(S.free)*2)
-				copy(a, S.free[S.freecdx:])
-				S.free = a
-			}
-			S.freeidx -= S.freecdx
-			S.freecdx = 0
-		}
+		S.freePtrs.Enqueue(ptr)
 	}
 	return ok
 }

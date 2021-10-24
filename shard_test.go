@@ -1,9 +1,7 @@
 package bigmap
 
 import (
-	"math/rand"
 	"testing"
-	"time"
 )
 
 func GenShardKeys(n int) []uint64 {
@@ -100,23 +98,22 @@ func BenchmarkShard_Mix_Unballanced(b *testing.B) {
 }
 
 func TestShard(t *testing.T) {
-	rand.Seed(time.Now().UnixNano())
-	keys := make([][]byte, 4096)
+	keys := make([]uint64, 4096)
 	vals := make([][]byte, 4096)
 	for i := range keys {
-		keys[i] = RandomString(10)
+		keys[i] = FNV64(RandomString(10))
 		vals[i] = RandomString(100)
 	}
-	shard := NewShard(1024, 1024, nil)
+	shard := NewShard(1024, 100, nil)
 	for i, key := range keys {
-		err := shard.Put(FNV64(key), vals[i])
+		err := shard.Put(key, vals[i])
 		if err != nil {
 			t.Fatalf("shard put: %v", err)
 		}
 	}
 
 	for i, key := range keys {
-		val, ok := shard.Get(FNV64(key))
+		val, ok := shard.Get(key)
 
 		if !ok || string(val) != string(vals[i]) {
 			t.Fatalf("val expected: '%s' != '%s' ", string(val), vals[i])
@@ -124,10 +121,18 @@ func TestShard(t *testing.T) {
 	}
 
 	for _, key := range keys {
-		ok := shard.Delete(FNV64(key))
+		ok := shard.Delete(key)
 
 		if !ok {
 			t.Fatalf("delete expected")
 		}
+	}
+}
+
+func TestShard_Put_insertToBig(t *testing.T) {
+	shard := NewShard(1024, 100, nil)
+	err := shard.Put(123, []byte(RandomString(111)));
+	if err == nil {
+		t.Fatal("To big insert got nil, want err")
 	}
 }

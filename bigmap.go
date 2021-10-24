@@ -17,7 +17,7 @@ const (
 // It is made up of multiple shards therefore
 // enabling efficient parallel accesses.
 //
-// The BigMap doesn't has a global lock.
+// The BigMap doesn't have a global lock.
 // Shards are only locked individually.
 //
 // By default is it split into 16 shards

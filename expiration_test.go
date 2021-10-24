@@ -61,35 +61,39 @@ func MapExpiration(t *testing.T, factory ExpirationFactory) {
 
 func ShardExpiration(t *testing.T, factory ExpirationFactory) {
 	rand.Seed(time.Now().UnixNano())
-	keys := make([][]byte, 4096*8)
+	keys := make([]uint64, 4096*8)
 	vals := make([][]byte, 4096*8)
 	a := GenVal()
-	b := GenKey(1)
 	for i := range keys {
-		keys[i] = b
+		keys[i] = FNV64(GenKey(i))
 		vals[i] = a
 	}
 	shard := NewShard(1024, 1024, factory(0))
 	for i, key := range keys {
-		err := shard.Put(FNV64(key), vals[i])
+		err := shard.Put(key, vals[i])
 		if err != nil {
 			t.Fatalf("shard put: %v", err)
 		}
 	}
 
 	for _, key := range keys {
-		_, ok := shard.Get(FNV64(key))
+		_, ok := shard.Get(key)
 
 		if !ok {
 			t.Fatalf("Expiration service swooped to early")
 		}
 	}
+
+	for i := 0; i < 10; i++ {
+		shard.Delete(keys[i])
+	}
+	
 	time.Sleep(time.Second * 2)
 	for i, key := range keys {
-		_, ok := shard.Get(FNV64(key))
+		_, ok := shard.Get(key)
 
 		if ok {
-			t.Fatalf("Expiration service didn't swoop well enough for key %s (idx: %d)", key, i)
+			t.Fatalf("Expiration service didn't swoop well enough for key %d (idx: %d)", key, i)
 		}
 	}
 }
