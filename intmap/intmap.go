@@ -29,7 +29,7 @@ type IntMap struct {
 // New instanciates an new IntMap
 func New() *IntMap {
 	return &IntMap{
-		data:        make([]uint64, 64),
+		data:        make([]KeyType, 64),
 		dataSize:    64,
 		capacity:    32,
 		maxCapacity: 24,
