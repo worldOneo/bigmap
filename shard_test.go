@@ -118,6 +118,16 @@ func TestShard(t *testing.T) {
 		if !ok || string(val) != string(vals[i]) {
 			t.Fatalf("val expected: '%s' != '%s' ", string(val), vals[i])
 		}
+
+		cp, ok := shard.GetCopy(key)
+		if !ok || string(cp) != string(val) {
+			t.Fatalf("val expected: '%s' != '%s' ", string(cp), val)
+		}
+
+		cp[0] = 0
+		if string(cp) == string(val) {
+			t.Fatalf("val expected: '%s' != '%s' ", string(cp), val)
+		}
 	}
 
 	for _, key := range keys {

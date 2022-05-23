@@ -27,8 +27,8 @@ type IntMap struct {
 }
 
 // New instanciates an new IntMap
-func New() *IntMap {
-	return &IntMap{
+func New() IntMap {
+	return IntMap{
 		data:        make([]KeyType, 64),
 		dataSize:    64,
 		capacity:    32,

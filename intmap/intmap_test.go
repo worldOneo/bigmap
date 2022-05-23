@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func filled(n KeyType) *IntMap {
+func filled(n KeyType) IntMap {
 	m := New()
 	for i := KeyType(0); i < n; i++ {
 		m.Put(i, ValType(i))

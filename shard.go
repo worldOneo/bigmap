@@ -15,8 +15,8 @@ import (
 // and RLocks itself while Get
 type Shard struct {
 	sync.RWMutex
-	ptrs      *intmap.IntMap
-	freePtrs  *PointerQueue
+	ptrs      intmap.IntMap
+	freePtrs  PointerQueue
 	size      uint64
 	entrysize uint64
 	array     []byte
@@ -76,9 +76,12 @@ func (S *Shard) Put(key uint64, val []byte) error {
 }
 
 // Get retrieves an item from the shards internal byte-array.
-// It returns a copy of the corresponding byte slice
+// It returns a slice representing the item.
 // and a boolean if the items was contained if the boolean
 // is false the slice will be nil.
+//
+// The return value is mapped to the underlying byte-array.
+// If you want to change it use GetCopy.
 func (S *Shard) Get(key uint64) ([]byte, bool) {
 	S.hitExpirationService(key, ExpirationService.BeforeLock)
 	S.RLock()
@@ -94,8 +97,19 @@ func (S *Shard) Get(key uint64) ([]byte, bool) {
 	}
 	dataIndex := ptr + LengthBytes
 	dataLength := binary.LittleEndian.Uint64(S.array[ptr:])
-	dst := make([]byte, dataLength)
-	copy(dst, S.array[dataIndex:dataIndex+dataLength])
+	return S.array[dataIndex : dataIndex+dataLength], true
+}
+
+
+// GetCopy returns a copy of the item at the given key.
+// Behaves like Get but returns a copies the item.
+func (S *Shard) GetCopy(key uint64) ([]byte, bool) {
+	data, ok := S.Get(key)
+	if !ok {
+		return nil, false
+	}
+	dst := make([]byte, len(data))
+	copy(dst, data)
 	return dst, true
 }
 

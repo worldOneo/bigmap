@@ -330,11 +330,10 @@ func TestBigMap(t *testing.T) {
 
 }
 
-
 func TestBigMap_New_config(t *testing.T) {
 	bigmap := New(100, Config{
-		Shards: 3,
-		Capacity: 128,
+		Shards:            3,
+		Capacity:          128,
 		ExpirationFactory: Expires(time.Hour, ExpirationPolicyPassive),
 	})
 	if len(bigmap.shards) != 3 {

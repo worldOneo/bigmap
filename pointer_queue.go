@@ -10,8 +10,8 @@ type PointerQueue struct {
 }
 
 // NewPointerQueue iniitates a new PointerQueue
-func NewPointerQueue() *PointerQueue {
-	return &PointerQueue{
+func NewPointerQueue() PointerQueue {
+	return PointerQueue{
 		pointers:   make([]uint64, 128),
 		readIndex:  0,
 		writeIndex: 0,
