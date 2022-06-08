@@ -27,30 +27,32 @@ Each shard can store gigabytes of data without loosing performance, so it is goo
 ## Benchmarks
 
 The benchmarks are done on a machine with an i7-8750H CPU (12x 2.20 - 4GHz), 16GB  RAM (2666 MHz), Windows 10 machine
-```sh
-go version
-go version go1.17.2 windows/amd64
+The key size is ~24 bytes and the value size is 100 bytes. All settings are default.
+We can see I reach up to ~15 million OPs per second in the 10% Write 10% Delete 80% Read parallel benchmark on my machine.
 
-go test -benchmem -run=^$ -bench BenchmarkBigMap.* github.com/worldOneo/bigmap -benchtime=2s
+```sh
+go version  
+go version go1.18.1 windows/amd64
+
+go.exe test -benchmem -run=^$ -bench "BenchmarkGenKey.*|BenchmarkBigMap.*" github.com/worldOneo/bigmap --benchtime=2s
 goos: windows
 goarch: amd64
 pkg: github.com/worldOneo/bigmap
 cpu: Intel(R) Core(TM) i7-8750H CPU @ 2.20GHz
-
-BenchmarkGenKey-12                              20750223               113.5 ns/op            24 B/op          2 allocs/op
-BenchmarkFNV64-12                               472440758                5.106 ns/op           0 B/op          0 allocs/op
-BenchmarkBigMap_Put-12                           4457443               272.7 ns/op           301 B/op          0 allocs/op
-BenchmarkBigMap_Get-12                           6747880               217.0 ns/op           112 B/op          1 allocs/op
-BenchmarkBigMap_Delete-12                        9018730               154.9 ns/op            14 B/op          0 allocs/op
-BenchmarkBigMap_Mix_Ballanced-12                19041000                60.56 ns/op           37 B/op          0 allocs/op
-BenchmarkBigMap_Mix_Unballanced-12               6570567               189.2 ns/op           144 B/op          0 allocs/op
-# Parallel benchmarks have allocations because of the key generation (113.5ns; 2 allocs/op).
-# That also slows them down a little but this is required for the parallel test.
-BenchmarkBigMap_Put_Parallel-12                  5863574               207.6 ns/op           468 B/op          2 allocs/op
-BenchmarkBigMap_Get_Parallel-12                 12765644               103.1 ns/op           151 B/op          3 allocs/op
-BenchmarkBigMap_Delete_Parallel-12              11317700               107.2 ns/op            51 B/op          2 allocs/op
-BenchmarkBigMap_Mix_Ballanced_Parallel-12        6312416               167.6 ns/op           162 B/op          2 allocs/op
-BenchmarkBigMap_Mix_Unballanced_Parallel-12      7689206               190.4 ns/op           217 B/op          3 allocs/op
+BenchmarkGenKey-12                              20777691               116.3 ns/op            24 B/op          2 allocs/op
+BenchmarkBigMap_Put-12                           9230487               287.3 ns/op           290 B/op          0 allocs/op
+BenchmarkBigMap_Get-12                          12443001               246.9 ns/op           112 B/op          1 allocs/op
+BenchmarkBigMap_Delete-12                       17242245               180.2 ns/op            31 B/op          0 allocs/op
+BenchmarkBigMap_Mix_Ballanced-12                49623379                52.27 ns/op           37 B/op          0 allocs/op
+BenchmarkBigMap_Mix_Unballanced-12              14191022               198.2 ns/op           141 B/op          0 allocs/op
+# Parallel benchmarks have allocations because of the key generation (116.3 ns/op; 24 B/op; 2 allocs/op)
+# which also makes them slightly slower.
+BenchmarkBigMap_10_10_80_Parallel-12            31258323                75.20 ns/op           92 B/op          2 allocs/op
+BenchmarkBigMap_Put_Parallel-12                 15186710               164.1 ns/op           409 B/op          2 allocs/op
+BenchmarkBigMap_Get_Parallel-12                 30183781                86.25 ns/op          129 B/op          3 allocs/op
+BenchmarkBigMap_Delete_Parallel-12              27003519                84.30 ns/op           59 B/op          2 allocs/op
+BenchmarkBigMap_Mix_Ballanced_Parallel-12       20456823               114.1 ns/op           187 B/op          2 allocs/op
+BenchmarkBigMap_Mix_Unballanced_Parallel-12     24044000                86.45 ns/op          172 B/op          2 allocs/op
 ```
 
 ## Attention

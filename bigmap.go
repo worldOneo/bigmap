@@ -128,15 +128,6 @@ func (B *BigMap) Get(key []byte) ([]byte, bool) {
 	return s.Get(h)
 }
 
-// GetCopy returns a copy of the corresponding byte slice
-// and a boolean if the item was contained. If the boolean
-// is false the slice will be nil.
-// The returned byte slice is a copy of the original one.
-func (B *BigMap) GetCopy(key []byte) ([]byte, bool) {
-	s, h := B.SelectShard(key)
-	return s.GetCopy(h)
-}
-
 // Delete removes an item from the map.
 // Delete doesnt shrink the memory size of the map.
 // It only enables the space to be reused.

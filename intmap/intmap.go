@@ -72,6 +72,12 @@ func (I *IntMap) Get(key KeyType) (ValType, bool) {
 	}
 	index := I.index(key)
 	for {
+		if index >= uint64(len(I.data)) {
+			// check for optimistic concurrency
+			// if the map is accessed while it is modified
+			// it yields invalid results instead of panicking
+			return 0, false
+		}
 		definedKey := I.data[index]
 		if definedKey == Free {
 			return 0, false
