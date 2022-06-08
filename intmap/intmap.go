@@ -27,8 +27,8 @@ type IntMap struct {
 }
 
 // New instanciates an new IntMap
-func New() *IntMap {
-	return &IntMap{
+func New() IntMap {
+	return IntMap{
 		data:        make([]KeyType, 64),
 		dataSize:    64,
 		capacity:    32,
@@ -72,6 +72,12 @@ func (I *IntMap) Get(key KeyType) (ValType, bool) {
 	}
 	index := I.index(key)
 	for {
+		if index >= uint64(len(I.data)) {
+			// check for optimistic concurrency
+			// if the map is accessed while it is modified
+			// it yields invalid results instead of panicking
+			return 0, false
+		}
 		definedKey := I.data[index]
 		if definedKey == Free {
 			return 0, false

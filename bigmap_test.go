@@ -181,6 +181,31 @@ func BenchmarkBigMap_Mix_Ballanced_Parallel(b *testing.B) {
 	})
 }
 
+func BenchmarkBigMap_10_10_80_Parallel(b *testing.B) {
+	bigmap := New(100)
+	rand.Seed(time.Now().UnixNano())
+	b.ReportAllocs()
+	b.RunParallel(func(p *testing.PB) {
+		worker := strconv.Itoa(rand.Int())
+		inserted := [24][]byte{}
+		for i := 0; i < 24; i++ {
+			inserted[i] = GenSafeKey(worker, i)
+		}
+		i := 0
+		for p.Next() {
+			if i%10 == 0 {
+				inserted[i%24] = GenSafeKey(worker, i)
+				bigmap.Put(inserted[i%24], GenVal())
+			} else if i%10 == 1 {
+				bigmap.Delete(inserted[i%24])
+			} else {
+				bigmap.Get(GenSafeKey(worker, i))
+			}
+			i++
+		}
+	});
+}
+
 // Hash by Thomas Wang (https://burtleburtle.net/bob/hash/integer.html)
 func hash(a uint32) uint32 {
 	a = (a ^ 61) ^ (a >> 16)
@@ -197,18 +222,25 @@ func BenchmarkBigMap_Mix_Unballanced_Parallel(b *testing.B) {
 	b.ReportAllocs()
 	b.RunParallel(func(p *testing.PB) {
 		worker := strconv.Itoa(rand.Int())
+		inserted := [24][]byte{}
+		for i := 0; i < 24; i++ {
+			inserted[i] = GenSafeKey(worker, i)
+		}
 		r := rand.Uint32()
 		i := 0
 		s := 0
 		for p.Next() {
 			i++
-			k := GenSafeKey(worker, i)
 			switch s {
 			case 0:
+				k := GenSafeKey(worker, i)
+				inserted[i%24] = k
 				bigmap.Put(k, GenVal())
 			case 1:
+				k := inserted[i%24]
 				bigmap.Delete(k)
 			case 2:
+				k := GenSafeKey(worker, i)
 				bigmap.Get(k)
 			}
 			r = hash(r)
@@ -234,6 +266,7 @@ func BenchParallel(b *testing.B, n int) {
 	b.Run("BigMap Delete Parallel", wrap(BenchmarkBigMap_Delete_Parallel, n))
 	b.Run("BigMap Mix Parallel", wrap(BenchmarkBigMap_Mix_Ballanced_Parallel, n))
 	b.Run("BigMap Mix Unbalanced Parallel", wrap(BenchmarkBigMap_Mix_Ballanced_Parallel, n))
+	b.Run("BigMap 10_10_80 Parallel", wrap(BenchmarkBigMap_10_10_80_Parallel, n))
 }
 
 func wrap(a func(b *testing.B), i int) func(b *testing.B) {
@@ -330,11 +363,10 @@ func TestBigMap(t *testing.T) {
 
 }
 
-
 func TestBigMap_New_config(t *testing.T) {
 	bigmap := New(100, Config{
-		Shards: 3,
-		Capacity: 128,
+		Shards:            3,
+		Capacity:          128,
 		ExpirationFactory: Expires(time.Hour, ExpirationPolicyPassive),
 	})
 	if len(bigmap.shards) != 3 {

@@ -3,10 +3,26 @@ package bigmap
 import (
 	"encoding/binary"
 	"fmt"
-	"sync"
+	"runtime"
 
+	commoncollections "github.com/worldOneo/CommonCollections"
 	"github.com/worldOneo/bigmap/intmap"
 )
+
+const maxSpins = 16
+
+type spinner uint8
+
+func (spin *spinner) spin() {
+	*spin++
+	cnt := *spin
+	if cnt > maxSpins {
+		cnt = maxSpins
+	}
+	for i := 0; i < int(cnt); i++ {
+		runtime.Gosched()
+	}
+}
 
 // Shard is a fraction of a bigmap.
 // A bigmap is made up of shards which are
@@ -14,9 +30,9 @@ import (
 // A shard locks itself while Put/Delete
 // and RLocks itself while Get
 type Shard struct {
-	sync.RWMutex
-	ptrs      *intmap.IntMap
-	freePtrs  *PointerQueue
+	lock      commoncollections.OptLock
+	ptrs      intmap.IntMap
+	freePtrs  PointerQueue
 	size      uint64
 	entrysize uint64
 	array     []byte
@@ -32,6 +48,7 @@ type Shard struct {
 // items wont be removed automatically.
 func NewShard(capacity, entrysize uint64, expSrv ExpirationService) *Shard {
 	shrd := &Shard{
+		lock:      *commoncollections.NewOptLock(),
 		ptrs:      intmap.New(),
 		freePtrs:  NewPointerQueue(),
 		size:      0,
@@ -53,10 +70,10 @@ func (S *Shard) Put(key uint64, val []byte) error {
 	S.hitExpirationService(key, ExpirationService.BeforeLock)
 	defer func() {
 		S.hitExpirationService(key, ExpirationService.Access)
-		S.Unlock()
+		S.lock.Unlock()
 		S.hitExpirationService(key, ExpirationService.AfterAccess)
 	}()
-	S.Lock()
+	S.lock.Lock()
 	S.hitExpirationService(key, ExpirationService.Lock)
 	ptr, ok := S.ptrs.Get(key)
 	if !ok {
@@ -76,27 +93,45 @@ func (S *Shard) Put(key uint64, val []byte) error {
 }
 
 // Get retrieves an item from the shards internal byte-array.
-// It returns a copy of the corresponding byte slice
+// It returns a slice representing the item.
 // and a boolean if the items was contained if the boolean
 // is false the slice will be nil.
+//
+// The return value is mapped to the underlying byte-array.
+// If you want to change it use GetCopy.
 func (S *Shard) Get(key uint64) ([]byte, bool) {
 	S.hitExpirationService(key, ExpirationService.BeforeLock)
-	S.RLock()
 	defer func() {
-		S.hitExpirationService(key, ExpirationService.Access)
-		S.RUnlock()
 		S.hitExpirationService(key, ExpirationService.AfterAccess)
 	}()
-	S.hitExpirationService(key, ExpirationService.Lock)
-	ptr, ok := S.ptrs.Get(key)
-	if !ok {
-		return nil, false
+	for {
+		spin := spinner(0)
+		var check uint32
+		var ok bool
+		for {
+			check, ok = S.lock.RLock()
+			if ok {
+				break
+			}
+			spin.spin()
+		}
+		S.hitExpirationService(key, ExpirationService.Lock)
+		ptr, ok := S.ptrs.Get(key)
+		if !ok {
+			return nil, false
+		}
+		dataIndex := ptr + LengthBytes
+		dataLength := binary.LittleEndian.Uint64(S.array[ptr:])
+		if !S.lock.RVerify(check) {
+			continue // avoid allocation
+		}
+		dst := make([]byte, dataLength)
+		copy(dst, S.array[dataIndex:dataIndex+dataLength])
+		if S.lock.RVerify(check) {
+			return dst, true
+		}
+		runtime.Gosched()
 	}
-	dataIndex := ptr + LengthBytes
-	dataLength := binary.LittleEndian.Uint64(S.array[ptr:])
-	dst := make([]byte, dataLength)
-	copy(dst, S.array[dataIndex:dataIndex+dataLength])
-	return dst, true
 }
 
 // Delete removes an item from the shard.
@@ -106,8 +141,8 @@ func (S *Shard) Get(key uint64) ([]byte, bool) {
 // nor of the shard.
 // It only enables the space to be reused.
 func (S *Shard) Delete(key uint64) bool {
-	S.Lock()
-	defer S.Unlock()
+	S.lock.Lock()
+	defer S.lock.Unlock()
 	S.hitExpirationService(key, ExpirationService.Remove)
 	return S.UnsafeDelete(key)
 }
