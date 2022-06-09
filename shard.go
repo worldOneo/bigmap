@@ -64,14 +64,14 @@ func (S *Shard) Put(key uint64, val []byte) error {
 		if !ok {
 			ptr = S.size
 			S.sizeCheck(S.entrysize + LengthBytes)
+			S.size += LengthBytes
+			S.size += S.entrysize
 		}
 		S.ptrs.Put(key, ptr)
 	}
 	dataIndex := ptr + LengthBytes
 	binary.LittleEndian.PutUint64(S.array[ptr:dataIndex], dataLength)
 	copy(S.array[dataIndex:dataIndex+dataLength], val)
-	S.size += LengthBytes
-	S.size += S.entrysize
 	return nil
 }
 
