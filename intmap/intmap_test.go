@@ -4,8 +4,20 @@ import (
 	"testing"
 )
 
+func nextPowerOfTwo(n KeyType) KeyType {
+	n--
+	n |= n >> 1
+	n |= n >> 2
+	n |= n >> 4
+	n |= n >> 8
+	n |= n >> 16
+	n |= n >> 32
+	n++
+	return n
+}
+
 func filled(n KeyType) IntMap {
-	m := New()
+	m := New(64)
 	for i := KeyType(0); i < n; i++ {
 		m.Put(i, ValType(i))
 	}
@@ -13,7 +25,7 @@ func filled(n KeyType) IntMap {
 }
 
 func TestIntMap_Put(t *testing.T) {
-	filled(200)
+	filled(200000)
 }
 
 func TestIntMap_Get(t *testing.T) {

@@ -48,6 +48,6 @@ func BenchmarkIntMap_Delete(b *testing.B) {
 	m := filled(uint64(b.N))
 	b.ResetTimer()
 	for i := KeyType(0); i < KeyType(b.N); i++ {
-		_, _ = m.Delete(i)
+		m.Delete(i)
 	}
 }
