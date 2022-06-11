@@ -29,21 +29,22 @@ func TestIntMap_Put(t *testing.T) {
 }
 
 func TestIntMap_Get(t *testing.T) {
-	m := filled(200)
-	for i := KeyType(0); i < 200; i++ {
+	n := KeyType(200000)
+	m := filled(n)
+	for i := KeyType(0); i < n; i++ {
 		v, ok := m.Get(i)
 		if v != ValType(i) || !ok {
 			t.Errorf("IntMap.Get() got = %v,%v, want %v,%v", v, ok, i, true)
 		}
 	}
-	v, ok := m.Get(201)
+	v, ok := m.Get(n + 1)
 	if v != 0 || ok {
 		t.Errorf("IntMap.Get() got = %v,%v, want %v,%v", v, ok, 0, true)
 	}
 }
 
 func TestIntMap_Delete(t *testing.T) {
-	n := KeyType(200)
+	n := KeyType(200000)
 	m := filled(n)
 	for i := KeyType(0); i < n; i++ {
 		v, ok := m.Delete(i)

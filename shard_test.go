@@ -104,11 +104,15 @@ func TestShard(t *testing.T) {
 		keys[i] = FNV64(RandomString(10))
 		vals[i] = RandomString(100)
 	}
-	shard := NewShard(1024, 100, nil)
+	shard := NewShard(1, 100, nil)
 	for i, key := range keys {
 		err := shard.Put(key, vals[i])
 		if err != nil {
 			t.Fatalf("shard put: %v", err)
+		}
+		_, ok := shard.Get(key)
+		if !ok {
+			t.Errorf("shard get: %v %d", ok, i)
 		}
 	}
 
@@ -116,7 +120,7 @@ func TestShard(t *testing.T) {
 		val, ok := shard.Get(key)
 
 		if !ok || string(val) != string(vals[i]) {
-			t.Fatalf("val expected: '%s' != '%s' ", string(val), vals[i])
+			t.Errorf("val expected: '%s' != '%s' (%d)", string(val), vals[i], i)
 		}
 	}
 

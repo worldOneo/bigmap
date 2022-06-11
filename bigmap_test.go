@@ -372,8 +372,8 @@ func TestBigMap_New_config(t *testing.T) {
 	if len(bigmap.shards) != 3 {
 		t.Fatalf("Failed to configure shards got %d, want %d", len(bigmap.shards), 3)
 	}
-	if len(bigmap.shards[0].array) != 128 {
-		t.Fatalf("Failed to configure capacity got %d, want %d", len(bigmap.shards[0].array), 128)
+	if len(bigmap.shards[0].storage.array) != 128 {
+		t.Fatalf("Failed to configure capacity got %d, want %d", len(bigmap.shards[0].storage.array), 128)
 	}
 	if bigmap.shards[0].expSrv == nil {
 		t.Fatalf("Failed to configure expiration got nil, want !nil")

@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"runtime"
+	"sync/atomic"
+	"unsafe"
 
 	commoncollections "github.com/worldOneo/CommonCollections"
 	"github.com/worldOneo/bigmap/intmap"
@@ -24,6 +26,11 @@ func (spin *spinner) spin() {
 	}
 }
 
+type storage struct {
+	array []byte
+	lock  []commoncollections.OptLock
+}
+
 // Shard is a fraction of a bigmap.
 // A bigmap is made up of shards which are
 // individuall locked to increase performance.
@@ -32,10 +39,10 @@ func (spin *spinner) spin() {
 type Shard struct {
 	lock      commoncollections.OptLock
 	ptrs      intmap.IntMap
+	storage   *storage
 	freePtrs  PointerQueue
 	size      uint64
 	entrysize uint64
-	array     []byte
 	expSrv    ExpirationService
 }
 
@@ -46,17 +53,27 @@ type Shard struct {
 // Expires defines the time after items can be removed.
 // If expires is smaller or equals 0 it will be ignored and
 // items wont be removed automatically.
-func NewShard(capacity, entrysize uint64, expSrv ExpirationService) *Shard {
+func NewShard(elementCount, entrysize uint64, expSrv ExpirationService) *Shard {
+	data := make([]byte, elementCount*(entrysize+LengthBytes))
+	storage := &storage{
+		array: data,
+		lock:  make([]commoncollections.OptLock, elementCount),
+	}
 	shrd := &Shard{
-		lock:      *commoncollections.NewOptLock(),
-		ptrs:      intmap.New(),
+		ptrs:      intmap.New(64),
 		freePtrs:  NewPointerQueue(),
 		size:      0,
 		entrysize: entrysize,
-		array:     make([]byte, capacity),
+		storage:   storage,
 		expSrv:    expSrv,
 	}
 	return shrd
+}
+
+func (S *Shard) loadArray(ptr uint64) ([]byte, *commoncollections.OptLock) {
+	data := atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&S.storage)))
+	storage := (*storage)(data)
+	return storage.array, &storage.lock[ptr]
 }
 
 // Put adds or overwrites an item in(to) the shards internal byte-array.
@@ -70,25 +87,35 @@ func (S *Shard) Put(key uint64, val []byte) error {
 	S.hitExpirationService(key, ExpirationService.BeforeLock)
 	defer func() {
 		S.hitExpirationService(key, ExpirationService.Access)
-		S.lock.Unlock()
 		S.hitExpirationService(key, ExpirationService.AfterAccess)
 	}()
-	S.lock.Lock()
 	S.hitExpirationService(key, ExpirationService.Lock)
+retry:
+	verify, ok := S.lock.RLock()
+	if !ok {
+		runtime.Gosched()
+		goto retry
+	}
 	ptr, ok := S.ptrs.Get(key)
 	if !ok {
 		ptr, ok = S.freePtrs.Dequeue()
 		if !ok {
-			ptr = S.size
-			S.sizeCheck(S.entrysize + LengthBytes)
+			ptr = atomic.AddUint64(&S.size, 1)
+			S.sizeCheck(ptr)
 		}
 		S.ptrs.Put(key, ptr)
 	}
+	array, lock := S.loadArray(ptr)
+	ptr *= (S.entrysize + LengthBytes)
 	dataIndex := ptr + LengthBytes
-	binary.LittleEndian.PutUint64(S.array[ptr:dataIndex], dataLength)
-	copy(S.array[dataIndex:dataIndex+dataLength], val)
-	S.size += LengthBytes
-	S.size += S.entrysize
+	lock.Lock()
+	binary.LittleEndian.PutUint64(array[ptr:dataIndex], dataLength)
+	copy(array[dataIndex:dataIndex+dataLength], val)
+	lock.Unlock()
+	if !S.lock.RVerify(verify) {
+		runtime.Gosched()
+		goto retry
+	}
 	return nil
 }
 
@@ -105,29 +132,30 @@ func (S *Shard) Get(key uint64) ([]byte, bool) {
 		S.hitExpirationService(key, ExpirationService.AfterAccess)
 	}()
 	for {
-		spin := spinner(0)
-		var check uint32
-		var ok bool
-		for {
-			check, ok = S.lock.RLock()
-			if ok {
-				break
-			}
-			spin.spin()
-		}
 		S.hitExpirationService(key, ExpirationService.Lock)
 		ptr, ok := S.ptrs.Get(key)
 		if !ok {
 			return nil, false
 		}
+		array, lock := S.loadArray(ptr)
+		ptr *= (S.entrysize + LengthBytes)
+		spin := spinner(0)
+		var check uint32
+		for {
+			check, ok = lock.RLock()
+			if ok {
+				break
+			}
+			spin.spin()
+		}
 		dataIndex := ptr + LengthBytes
-		dataLength := binary.LittleEndian.Uint64(S.array[ptr:])
-		if !S.lock.RVerify(check) {
+		dataLength := binary.LittleEndian.Uint64(array[ptr:])
+		if !lock.RVerify(check) {
 			continue // avoid allocation
 		}
 		dst := make([]byte, dataLength)
-		copy(dst, S.array[dataIndex:dataIndex+dataLength])
-		if S.lock.RVerify(check) {
+		copy(dst, array[dataIndex:dataIndex+dataLength])
+		if lock.RVerify(check) {
 			return dst, true
 		}
 		runtime.Gosched()
@@ -141,8 +169,6 @@ func (S *Shard) Get(key uint64) ([]byte, bool) {
 // nor of the shard.
 // It only enables the space to be reused.
 func (S *Shard) Delete(key uint64) bool {
-	S.lock.Lock()
-	defer S.lock.Unlock()
 	S.hitExpirationService(key, ExpirationService.Remove)
 	return S.UnsafeDelete(key)
 }
@@ -157,13 +183,26 @@ func (S *Shard) UnsafeDelete(key uint64) bool {
 	return ok
 }
 
-func (S *Shard) sizeCheck(add uint64) {
-	l := uint64(len(S.array))
-	for l < S.size+add {
-		l *= 2
-		b := make([]byte, l)
-		copy(b, S.array)
-		S.array = b
+func (S *Shard) sizeCheck(ptr uint64) {
+	array, _ := S.loadArray(0)
+	l := uint64(len(array))
+	desiredLength := ptr * (S.entrysize + LengthBytes)
+	if desiredLength >= l {
+		var b []byte
+		S.lock.Lock()
+		defer S.lock.Unlock()
+		l := uint64(len(array))
+		for desiredLength >= l {
+			l *= 2
+			b = make([]byte, l)
+			copy(b, array)
+		}
+		locks := make([]commoncollections.OptLock, l/(S.entrysize+LengthBytes))
+		storage := &storage{
+			array: b,
+			lock:  locks,
+		}
+		atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&S.storage)), unsafe.Pointer(storage))
 	}
 }
 

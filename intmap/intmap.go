@@ -4,6 +4,8 @@ import (
 	"runtime"
 	"sync/atomic"
 	"unsafe"
+
+	commoncollections "github.com/worldOneo/CommonCollections"
 )
 
 const (
@@ -21,6 +23,7 @@ type ValType = uint64
 
 // IntMap to store uint64->uint32 relations
 type IntMap struct {
+	lock    commoncollections.SpinLock
 	current *smallMap
 	next    *IntMap
 }
@@ -38,18 +41,20 @@ func (intMap *IntMap) Put(key KeyType, val ValType) {
 }
 
 func (intMap *IntMap) putPreassured(key KeyType, val ValType, preassure uint64) {
-	smallMap := (*smallMap)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&intMap.current))))
-	step, bang := smallMap.put(key, val)
-	next := (*IntMap)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&intMap.next))))
-	if next != nil {
-		next.Put(key, val)
-	} else {
-		if step {
-			intMap.expandStep(smallMap, key, val, preassure)
+	var step, bang, retry bool
+	var smap *smallMap
+	for {
+		smap = (*smallMap)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&intMap.current))))
+		step, bang, retry = smap.put(key, val)
+		if !retry {
+			break
 		}
-		if bang {
-			intMap.expandBang(smallMap, key, val, preassure)
-		}
+	}
+	if step {
+		intMap.expandStep(smap, key, val, preassure)
+	}
+	if bang {
+		intMap.expandBang(smap, key, val)
 	}
 }
 
@@ -57,31 +62,40 @@ func (intMap *IntMap) expandStep(m *smallMap, key KeyType, val ValType, preassur
 	intMap.expand(m, 1+preassure, key, val)
 }
 
-func (intMap *IntMap) expandBang(m *smallMap, key KeyType, val ValType, preassure uint64) {
-	intMap.expand(m, 2+preassure, key, val)
+func (intMap *IntMap) expandBang(m *smallMap, key KeyType, val ValType) {
+	intMap.expand(m, 2, key, val)
 }
 
 func (intMap *IntMap) expand(m *smallMap, f uint64, key KeyType, val ValType) {
-	nextPtr := (*unsafe.Pointer)(unsafe.Pointer(&intMap.next))
-	next := atomic.LoadPointer(nextPtr)
-	if next != nil {
-		runtime.Gosched()
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	current := (*smallMap)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&intMap.current))))
+	if current != m {
 		intMap.Put(key, val)
+		return
+	}
+	nextPtr := (*unsafe.Pointer)(unsafe.Pointer(&intMap.next))
+	var next unsafe.Pointer
+	next = atomic.LoadPointer(nextPtr)
+	if next != nil {
+		(*IntMap)(next).putPreassured(key, val, 0)
+		return
 	}
 	nextMap := New(KeyType(m.dataSize) * f)
-	smap := (unsafe.Pointer)(unsafe.Pointer(&nextMap))
-	if !atomic.CompareAndSwapPointer(nextPtr, next, smap) {
+	newPtr := (unsafe.Pointer)(unsafe.Pointer(&nextMap))
+	if !atomic.CompareAndSwapPointer(nextPtr, nil, newPtr) {
 		runtime.Gosched()
 		intMap.Put(key, val)
+		return
 	}
-
 	for i := int64(0); i < int64(m.dataSize); i += 2 {
 		key := atomic.LoadUint64(&m.data[i])
 		if key == Free {
 			continue
 		}
 		val := atomic.SwapUint64(&m.data[i+1], transient)
-		if val == tombstone {
+		if val == tombstone || val == transient {
 			continue
 		}
 		nextMap.putPreassured(key, val, 1)
@@ -89,23 +103,28 @@ func (intMap *IntMap) expand(m *smallMap, f uint64, key KeyType, val ValType) {
 	nextMap.current.freeSet = m.freeSet
 	nextMap.current.freeVal = m.freeVal
 	nextMap.putPreassured(key, val, 1)
-	atomic.SwapPointer((*unsafe.Pointer)(unsafe.Pointer(&intMap.current)), unsafe.Pointer(nextMap.current))
-	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&intMap.next)), nil)
+	atomic.StorePointer((*unsafe.Pointer)(unsafe.Pointer(&intMap.current)), unsafe.Pointer(nextMap.current))
+	atomic.StorePointer(nextPtr, nil)
 }
 
 func (intMap *IntMap) Get(key KeyType) (val ValType, ok bool) {
 	smallMap := (*smallMap)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&intMap.current))))
 	val, ok = smallMap.get(key)
+	if val == transient {
+		runtime.Gosched()
+		return intMap.Get(key)
+	}
 	return
 }
 
 func (intMap *IntMap) Delete(key KeyType) (val ValType, ok bool) {
-	val, ok, moved := intMap.current.delete(key)
+	current := (*smallMap)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&intMap.current))))
+	val, ok, moved := current.delete(key)
 	if moved {
 		runtime.Gosched()
 		return intMap.Delete(key)
 	}
-	return
+	return val, ok
 }
 
 // new instanciates an new IntMap
@@ -124,11 +143,11 @@ func newSmallMap(itemCount KeyType) *smallMap {
 const maxSteps = 64
 
 // Put adds an item to the int map
-func (small *smallMap) put(key KeyType, val ValType) (overstep bool, sizebang bool) {
+func (small *smallMap) put(key KeyType, val ValType) (overstep bool, sizebang bool, retry bool) {
 	if key == Free {
 		small.freeVal = val
 		small.freeSet = true
-		return false, false
+		return false, false, false
 	}
 	index := small.index(key)
 	for steps := 0; steps < maxSteps; steps++ {
@@ -137,26 +156,34 @@ func (small *smallMap) put(key KeyType, val ValType) (overstep bool, sizebang bo
 			index = small.next(index)
 			continue
 		}
+		// write blockade for moving values
+		definedVal := atomic.LoadUint64(&small.data[index+1])
+		if definedVal == transient {
+			goto retry
+		}
 		if definedKey == Free {
-			if atomic.CompareAndSwapUint64(&small.data[index], Free, key) {
-				atomic.StoreUint64(&small.data[index+1], val)
-				return false, atomic.AddInt64(&small.size, 1) > small.maxCapacity
+			if atomic.CompareAndSwapUint64(&small.data[index], Free, key) ||
+				atomic.LoadUint64(&small.data[index]) == key {
+				if atomic.CompareAndSwapUint64(&small.data[index+1], definedVal, val) {
+					return false, atomic.AddInt64(&small.size, 1) > small.maxCapacity, false
+				} else {
+					goto retry
+				}
 			} else {
 				index = small.next(index)
 				continue
 			}
 		}
-		if atomic.CompareAndSwapUint64(&small.data[index], definedKey, uint64(val)) {
-			atomic.StoreUint64(&small.data[index+1], key)
-			return false, atomic.AddInt64(&small.size, 1) > small.maxCapacity
+
+		if atomic.CompareAndSwapUint64(&small.data[index+1], definedVal, val) {
+			return false, false, false
 		} else {
-			index = small.next(index)
-			continue
+			goto retry
 		}
 	}
-	overstep = true
-	sizebang = false
-	return
+	return true, false, false
+retry:
+	return false, false, true
 }
 
 const tombstone = KeyType(^uint64(0))
@@ -172,7 +199,7 @@ func (small *smallMap) get(key KeyType) (ValType, bool) {
 		return 0, false
 	}
 	index := small.index(key)
-	for {
+	for i := 0; i < maxSteps; i++ {
 		if index >= uint64(len(small.data)) {
 			// check for optimistic concurrency
 			// if the map is accessed while it is modified
@@ -188,11 +215,12 @@ func (small *smallMap) get(key KeyType) (ValType, bool) {
 			continue
 		}
 		val := atomic.LoadUint64(&small.data[index+1])
-		if val == tombstone || val == transient {
+		if val == tombstone {
 			return 0, false
 		}
 		return ValType(val), true
 	}
+	return 0, false
 }
 
 // Delete removes a value from this map returns value,true or
@@ -206,7 +234,7 @@ func (small *smallMap) delete(key KeyType) (ValType, bool, bool) {
 		return 0, false, false
 	}
 	index := small.index(key)
-	for {
+	for i := 0; i < maxSteps; i++ {
 		definedKey := atomic.LoadUint64(&small.data[index])
 		if definedKey == Free {
 			return 0, false, false
@@ -223,10 +251,9 @@ func (small *smallMap) delete(key KeyType) (ValType, bool, bool) {
 			return 0, false, true
 		}
 
-		atomic.StoreUint64(&small.data[index+1], tombstone)
-		atomic.AddInt64(&small.size, -1)
-		return ValType(data), true, false
+		return ValType(data), true, !atomic.CompareAndSwapUint64(&small.data[index+1], data, tombstone)
 	}
+	return 0, false, false
 }
 
 func scramble(key KeyType) KeyType {
@@ -243,6 +270,7 @@ func (small *smallMap) index(key KeyType) KeyType {
 }
 
 type smallMap struct {
+	lock        commoncollections.OptLock
 	data        []KeyType
 	dataSize    KeyType
 	capacity    KeyType

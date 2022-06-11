@@ -1,5 +1,7 @@
 package bigmap
 
+import commoncollections "github.com/worldOneo/CommonCollections"
+
 // PointerQueue is an Unbound queue to store free pointers in a shard.
 // It is unsafe to access it parallel.
 type PointerQueue struct {
@@ -7,6 +9,7 @@ type PointerQueue struct {
 	readIndex  int // Position of reading free pointers
 	writeIndex int // Position of writing free pointers
 	length     int
+	lock       commoncollections.SpinLock
 }
 
 // NewPointerQueue iniitates a new PointerQueue
@@ -22,6 +25,8 @@ func NewPointerQueue() PointerQueue {
 // Dequeue returns the next pointer if available and true
 // or 0 and false
 func (P *PointerQueue) Dequeue() (v uint64, ok bool) {
+	P.lock.Lock()
+	defer P.lock.Unlock()
 	if P.readIndex == P.writeIndex {
 		return 0, false
 	}
@@ -35,6 +40,8 @@ func (P *PointerQueue) Dequeue() (v uint64, ok bool) {
 
 // Enqueue pushes a new Pointer to the queue
 func (P *PointerQueue) Enqueue(ptr uint64) {
+	P.lock.Lock()
+	defer P.lock.Unlock()
 	P.pointers[P.writeIndex] = ptr
 	P.writeIndex++
 	if P.writeIndex == P.length {
