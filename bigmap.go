@@ -128,6 +128,13 @@ func (B *BigMap) Get(key []byte) ([]byte, bool) {
 	return s.Get(h)
 }
 
+// GetInto retrieves an item for the key and writes it into buffer.
+// Returns true if the item was contained, false otherwise.
+func (B *BigMap) GetInto(key []byte, buffer []byte) bool {
+	s, h := B.SelectShard(key)
+	return s.GetInto(h, buffer)
+}
+
 // Delete removes an item from the map.
 // Delete doesnt shrink the memory size of the map.
 // It only enables the space to be reused.

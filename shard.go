@@ -96,9 +96,6 @@ func (S *Shard) Put(key uint64, val []byte) error {
 // It returns a slice representing the item.
 // and a boolean if the items was contained if the boolean
 // is false the slice will be nil.
-//
-// The return value is mapped to the underlying byte-array.
-// If you want to change it use GetCopy.
 func (S *Shard) Get(key uint64) ([]byte, bool) {
 	S.hitExpirationService(key, ExpirationService.BeforeLock)
 	defer func() {
@@ -129,6 +126,44 @@ func (S *Shard) Get(key uint64) ([]byte, bool) {
 		copy(dst, S.array[dataIndex:dataIndex+dataLength])
 		if S.lock.RVerify(check) {
 			return dst, true
+		}
+		runtime.Gosched()
+	}
+}
+
+// GetInto retrieves an item from the shards internal byte-array
+// and writes it into buffer.
+// It returns true if the item was contained false otherwise.
+func (S *Shard) GetInto(key uint64, buffer []byte) bool {
+	// sync with Get
+	S.hitExpirationService(key, ExpirationService.BeforeLock)
+	defer func() {
+		S.hitExpirationService(key, ExpirationService.AfterAccess)
+	}()
+	for {
+		spin := spinner(0)
+		var check uint32
+		var ok bool
+		for {
+			check, ok = S.lock.RLock()
+			if ok {
+				break
+			}
+			spin.spin()
+		}
+		S.hitExpirationService(key, ExpirationService.Lock)
+		ptr, ok := S.ptrs.Get(key)
+		if !ok {
+			return false
+		}
+		dataIndex := ptr + LengthBytes
+		dataLength := binary.LittleEndian.Uint64(S.array[ptr:])
+		if !S.lock.RVerify(check) {
+			continue
+		}
+		copy(buffer, S.array[dataIndex:dataIndex+dataLength])
+		if S.lock.RVerify(check) {
+			return true
 		}
 		runtime.Gosched()
 	}
