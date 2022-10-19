@@ -129,8 +129,8 @@ func (B *BigMap) Get(key []byte) ([]byte, bool) {
 }
 
 // GetInto retrieves an item for the key and writes it into buffer.
-// Returns true if the item was contained, false otherwise.
-func (B *BigMap) GetInto(key []byte, buffer []byte) bool {
+// Returns the size, true if the item was contained and 0, false otherwise.
+func (B *BigMap) GetInto(key []byte, buffer []byte) (uint64, bool) {
 	s, h := B.SelectShard(key)
 	return s.GetInto(h, buffer)
 }

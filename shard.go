@@ -133,8 +133,8 @@ func (S *Shard) Get(key uint64) ([]byte, bool) {
 
 // GetInto retrieves an item from the shards internal byte-array
 // and writes it into buffer.
-// It returns true if the item was contained false otherwise.
-func (S *Shard) GetInto(key uint64, buffer []byte) bool {
+// It returns the size, true if the item was contained and 0, false otherwise.
+func (S *Shard) GetInto(key uint64, buffer []byte) (uint64, bool) {
 	// sync with Get
 	S.hitExpirationService(key, ExpirationService.BeforeLock)
 	defer func() {
@@ -154,7 +154,7 @@ func (S *Shard) GetInto(key uint64, buffer []byte) bool {
 		S.hitExpirationService(key, ExpirationService.Lock)
 		ptr, ok := S.ptrs.Get(key)
 		if !ok {
-			return false
+			return 0, false
 		}
 		dataIndex := ptr + LengthBytes
 		dataLength := binary.LittleEndian.Uint64(S.array[ptr:])
@@ -163,7 +163,7 @@ func (S *Shard) GetInto(key uint64, buffer []byte) bool {
 		}
 		copy(buffer, S.array[dataIndex:dataIndex+dataLength])
 		if S.lock.RVerify(check) {
-			return true
+			return dataLength, true
 		}
 		runtime.Gosched()
 	}
