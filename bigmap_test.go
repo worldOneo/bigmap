@@ -65,6 +65,19 @@ func BenchmarkBigMap_Get(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		bigmap.Get(keys[i])
 	}
+	b.SetBytes(1)
+}
+
+func BenchmarkBigMap_GetInto(b *testing.B) {
+	bigmap := New(100)
+	keys := PopulateMap(b.N, &bigmap)
+	buff := make([]byte, 100)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		bigmap.GetInto(keys[i], buff)
+	}
+	b.SetBytes(1)
 }
 
 func BenchmarkBigMap_Delete(b *testing.B) {
@@ -126,19 +139,42 @@ func BenchmarkBigMap_Put_Parallel(b *testing.B) {
 
 func BenchmarkBigMap_Get_Parallel(b *testing.B) {
 	bigmap := New(100)
+	keys := PopulateMapParallel(b, &bigmap)
 	PopulateMapParallel(b, &bigmap)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	w := int32(-1)
 	b.RunParallel(func(p *testing.PB) {
-		worker := strconv.Itoa(int(atomic.AddInt32(&w, 1)))
+		id := int(atomic.AddInt32(&w, 1))
+		len := len(keys[id])
 		i := 0
 		for p.Next() {
-			bigmap.Get(GenSafeKey(worker, i))
+			bigmap.Get(keys[id][i%len])
 			i++
 		}
 	})
+	b.SetBytes(1)
+}
+
+func BenchmarkBigMap_GetInto_Parallel(b *testing.B) {
+	bigmap := New(100)
+	keys := PopulateMapParallel(b, &bigmap)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	w := int32(-1)
+	b.RunParallel(func(p *testing.PB) {
+		buff := make([]byte, 100)
+		id := int(atomic.AddInt32(&w, 1))
+		len := len(keys[id])
+		i := 0
+		for p.Next() {
+			bigmap.GetInto(keys[id][i%len], buff)
+			i++
+		}
+	})
+	b.SetBytes(1)
 }
 
 func BenchmarkBigMap_Delete_Parallel(b *testing.B) {
@@ -203,7 +239,7 @@ func BenchmarkBigMap_10_10_80_Parallel(b *testing.B) {
 			}
 			i++
 		}
-	});
+	})
 }
 
 // Hash by Thomas Wang (https://burtleburtle.net/bob/hash/integer.html)
@@ -302,21 +338,25 @@ func PopulateMap(n int, bm *BigMap) [][]byte {
 	return keys
 }
 
-func PopulateMapParallel(b *testing.B, bm *BigMap) {
+func PopulateMapParallel(b *testing.B, bm *BigMap) [][][]byte {
 	n := int(math.Min(float64(b.N), 2000000))
+	keys := make([][][]byte, runtime.GOMAXPROCS(0))
 	//b.Logf("Populating map with %d items", n)
 	wg := sync.WaitGroup{}
 	for i := 0; i < runtime.GOMAXPROCS(0); i++ {
+		keys[i] = make([][]byte, n)
 		wg.Add(1)
 		w := strconv.Itoa(i)
-		go func(worker string) {
+		go func(num int, worker string) {
 			for i := 0; i < n; i++ {
-				bm.Put(GenSafeKey(worker, i), GenVal())
+				keys[num][i] = GenSafeKey(worker, i)
+				bm.Put(keys[num][i], GenVal())
 			}
 			wg.Done()
-		}(w)
+		}(i, w)
 	}
 	wg.Wait()
+	return keys
 }
 
 func GenVal() []byte {
