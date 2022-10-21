@@ -24,7 +24,7 @@ func RandomString(n int) []byte {
 
 func BenchmarkGenKey(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		GenKey(i)
+		GenSafeKey("00", i)
 	}
 }
 
@@ -54,6 +54,7 @@ func BenchmarkBigMap_Put(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		bigmap.Put(keys[i], val)
 	}
+	b.SetBytes(1)
 }
 
 func BenchmarkBigMap_Get(b *testing.B) {
@@ -89,36 +90,41 @@ func BenchmarkBigMap_Delete(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		bigmap.Delete(keys[i])
 	}
+	b.SetBytes(1)
 }
 
 func BenchmarkBigMap_Mix_Ballanced(b *testing.B) {
 	bigmap := New(100)
 	keys := GenMapKeys(b.N)
+	buff := make([]byte, 100)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N/3; i++ {
 		k := keys[i]
 		bigmap.Put(k, GenVal())
-		bigmap.Get(k)
+		bigmap.GetInto(k, buff)
 		bigmap.Delete(k)
 	}
+	b.SetBytes(1)
 }
 
 func BenchmarkBigMap_Mix_Unballanced(b *testing.B) {
 	bigmap := New(100)
 	N := b.N/3 + 1
 	keys := GenMapKeys(N)
+	buff := make([]byte, 100)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < N; i++ {
 		bigmap.Put(keys[i], GenVal())
 	}
 	for i := 0; i < N; i++ {
-		bigmap.Get(keys[i])
+		bigmap.GetInto(keys[i], buff)
 	}
 	for i := 0; i < N; i++ {
 		bigmap.Delete(keys[i])
 	}
+	b.SetBytes(1)
 }
 
 func BenchmarkBigMap_Put_Parallel(b *testing.B) {
@@ -128,13 +134,15 @@ func BenchmarkBigMap_Put_Parallel(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	b.RunParallel(func(p *testing.PB) {
+		val := make([]byte, 100)
 		worker := strconv.Itoa(rand.Int())
 		i := 0
 		for p.Next() {
-			bigmap.Put(GenSafeKey(worker, i), GenVal())
+			bigmap.Put(GenSafeKey(worker, i), val)
 			i++
 		}
 	})
+	b.SetBytes(1)
 }
 
 func BenchmarkBigMap_Get_Parallel(b *testing.B) {
@@ -192,29 +200,31 @@ func BenchmarkBigMap_Delete_Parallel(b *testing.B) {
 			i++
 		}
 	})
+	b.SetBytes(1)
 }
 
 func BenchmarkBigMap_Mix_Ballanced_Parallel(b *testing.B) {
 	bigmap := New(100)
-
 	rand.Seed(time.Now().UnixNano())
 
 	b.ReportAllocs()
 	b.RunParallel(func(p *testing.PB) {
+		buff := make([]byte, 100)
 		worker := strconv.Itoa(rand.Int())
 		i := 0
 		for p.Next() {
 			k := GenSafeKey(worker, i)
 			if i%3 == 0 {
-				bigmap.Put(k, GenVal())
+				bigmap.Put(k, buff)
 			} else if i%3 == 1 {
-				bigmap.Get(k)
+				bigmap.GetInto(k, buff)
 			} else {
 				bigmap.Delete(k)
 			}
 			i++
 		}
 	})
+	b.SetBytes(1)
 }
 
 func BenchmarkBigMap_10_10_80_Parallel(b *testing.B) {
@@ -222,6 +232,7 @@ func BenchmarkBigMap_10_10_80_Parallel(b *testing.B) {
 	rand.Seed(time.Now().UnixNano())
 	b.ReportAllocs()
 	b.RunParallel(func(p *testing.PB) {
+		buff := make([]byte, 100)
 		worker := strconv.Itoa(rand.Int())
 		inserted := [24][]byte{}
 		for i := 0; i < 24; i++ {
@@ -231,15 +242,16 @@ func BenchmarkBigMap_10_10_80_Parallel(b *testing.B) {
 		for p.Next() {
 			if i%10 == 0 {
 				inserted[i%24] = GenSafeKey(worker, i)
-				bigmap.Put(inserted[i%24], GenVal())
+				bigmap.Put(inserted[i%24], buff)
 			} else if i%10 == 1 {
 				bigmap.Delete(inserted[i%24])
 			} else {
-				bigmap.Get(GenSafeKey(worker, i))
+				bigmap.GetInto(GenSafeKey(worker, i), buff)
 			}
 			i++
 		}
 	})
+	b.SetBytes(1)
 }
 
 // Hash by Thomas Wang (https://burtleburtle.net/bob/hash/integer.html)
@@ -257,6 +269,7 @@ func BenchmarkBigMap_Mix_Unballanced_Parallel(b *testing.B) {
 
 	b.ReportAllocs()
 	b.RunParallel(func(p *testing.PB) {
+		buff := make([]byte, 100)
 		worker := strconv.Itoa(rand.Int())
 		inserted := [24][]byte{}
 		for i := 0; i < 24; i++ {
@@ -271,13 +284,13 @@ func BenchmarkBigMap_Mix_Unballanced_Parallel(b *testing.B) {
 			case 0:
 				k := GenSafeKey(worker, i)
 				inserted[i%24] = k
-				bigmap.Put(k, GenVal())
+				bigmap.Put(k, buff)
 			case 1:
 				k := inserted[i%24]
 				bigmap.Delete(k)
 			case 2:
 				k := GenSafeKey(worker, i)
-				bigmap.Get(k)
+				bigmap.GetInto(k, buff)
 			}
 			r = hash(r)
 			if r&0xFFFF == 0xFFFF { // Switch randomly
@@ -287,22 +300,7 @@ func BenchmarkBigMap_Mix_Unballanced_Parallel(b *testing.B) {
 			}
 		}
 	})
-}
-
-func BenchmarkBigMap_Goroutines(b *testing.B) {
-	BenchParallel(b, 10)
-	BenchParallel(b, 1000)
-	BenchParallel(b, 10000)
-}
-
-func BenchParallel(b *testing.B, n int) {
-	fmt.Printf(" === \nBenchmarking with %d routines\n === \n", runtime.GOMAXPROCS(0)*n)
-	b.Run("BigMap Put Parallel", wrap(BenchmarkBigMap_Put_Parallel, n))
-	b.Run("BigMap Get Parallel", wrap(BenchmarkBigMap_Get_Parallel, n))
-	b.Run("BigMap Delete Parallel", wrap(BenchmarkBigMap_Delete_Parallel, n))
-	b.Run("BigMap Mix Parallel", wrap(BenchmarkBigMap_Mix_Ballanced_Parallel, n))
-	b.Run("BigMap Mix Unbalanced Parallel", wrap(BenchmarkBigMap_Mix_Ballanced_Parallel, n))
-	b.Run("BigMap 10_10_80 Parallel", wrap(BenchmarkBigMap_10_10_80_Parallel, n))
+	b.SetBytes(1)
 }
 
 func wrap(a func(b *testing.B), i int) func(b *testing.B) {
@@ -350,7 +348,7 @@ func PopulateMapParallel(b *testing.B, bm *BigMap) [][][]byte {
 		go func(num int, worker string) {
 			for i := 0; i < n; i++ {
 				keys[num][i] = GenSafeKey(worker, i)
-				bm.Put(keys[num][i], GenVal())
+				bm.Put(keys[num][i], make([]byte, bm.shards[0].entrysize))
 			}
 			wg.Done()
 		}(i, w)
